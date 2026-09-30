@@ -1,14 +1,17 @@
 import type { Opt, Rel } from "@mikro-orm/core";
+import { Collection } from "@mikro-orm/core";
 import {
 	Entity,
 	Index,
 	ManyToOne,
+	OneToMany,
 	PrimaryKey,
 	Property,
 	Unique,
 } from "@mikro-orm/decorators/legacy";
 import { BoardEntity } from "./board.entity.js";
 import { ColumnRepository } from "../repository/column.repository.js";
+import { TaskEntity } from "./task.entity.js";
 
 @Entity({
 	tableName: "columns",
@@ -52,4 +55,10 @@ export class ColumnEntity {
 		type: "text",
 	})
 	pullDescription: Opt<string> = "";
+
+	@OneToMany(() => TaskEntity, (task) => task.column, {
+		orphanRemoval: true,
+		orderBy: { position: "asc", id: "asc" },
+	})
+	tasks = new Collection<TaskEntity>(this);
 }

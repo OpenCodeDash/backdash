@@ -16,6 +16,9 @@ async function bootstrap() {
 		.build();
 	const document = SwaggerModule.createDocument(app, config);
 	SwaggerModule.setup("docs", app, document);
+	app.getHttpAdapter().getInstance().get("/openapi.json", (_req: unknown, res: { json: (v: unknown) => void }) => {
+		res.json(document);
+	});
 
 	await app.listen(process.env.PORT ?? 3000);
 }

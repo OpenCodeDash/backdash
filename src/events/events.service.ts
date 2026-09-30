@@ -48,9 +48,11 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
 
 	// Call AFTER the flush/commit that wrote the events (seq only exists then),
 	// and after em.transactional() has resolved, never inside its callback.
-	publish(events: EventEntity[]): void {
-		for (const event of events) {
-			this.live.next(EventResponse.from(event));
+	// Takes wire messages, not entities: a delete may have detached the
+	// entities (and cleared their board ref) before this runs.
+	publish(messages: EventResponse[]): void {
+		for (const message of messages) {
+			this.live.next(message);
 		}
 	}
 

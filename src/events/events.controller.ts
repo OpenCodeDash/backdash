@@ -19,7 +19,9 @@ import { Observable } from "rxjs";
 import { EventsService } from "./events.service.js";
 import { EventResponse } from "./response/event.response.js";
 import { parseLastEventId } from "#/util/events.util";
-import { KanbanService } from "#/kanban/kanban.service";
+import { InjectRepository } from "@mikro-orm/nestjs";
+import { BoardEntity } from "#/kanban/entity/board.entity";
+import { BoardRepository } from "#/kanban/repository/board.repository";
 
 const STREAM_NOTES =
 	"Server-sent events. Each message's `id` is the event `seq` and its `data` " +
@@ -31,7 +33,8 @@ const STREAM_NOTES =
 export class EventsController {
 	constructor(
 		private readonly events: EventsService,
-		private readonly kanbanService: KanbanService
+		@InjectRepository(BoardEntity)
+		private readonly boardsRepo: BoardRepository
 	) {}
 
 	@Sse("boards/:boardId/events")
@@ -50,7 +53,7 @@ export class EventsController {
 	): Promise<Observable<MessageEvent>> {
 		// Checked before the stream starts so a bad id is a real 404, not an
 		// empty stream that never emits
-		const boardExists = await this.kanbanService.boardExists(boardId);
+		const boardExists = (await this.boardsRepo.count({ id: boardId })) > 0;
 		if (!boardExists) {
 			throw new NotFoundException("Board not found");
 		}

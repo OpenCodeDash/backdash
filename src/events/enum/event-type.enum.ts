@@ -1,10 +1,15 @@
 export enum EventType {
 	BoardCreated = "board.created",
+	BoardUpdated = "board.updated",
+	BoardDeleted = "board.deleted",
 	ColumnAdded = "column.added",
+	ColumnUpdated = "column.updated",
+	ColumnDeleted = "column.deleted",
 	ColumnReordered = "column.reordered",
 	TaskCreated = "task.created",
 	TaskUpdated = "task.updated",
 	TaskClaimed = "task.claimed",
 	TaskMoved = "task.moved",
 	TaskReleased = "task.released",
+	TaskDeleted = "task.deleted",
 }

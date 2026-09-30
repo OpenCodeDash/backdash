@@ -57,7 +57,7 @@ describe("EventsService", () => {
 
 		const event = events.append(board, EventType.BoardCreated, "system", {});
 		await ctx.em.flush();
-		service.publish([event]);
+		service.publish([EventResponse.from(event)]);
 		sub.unsubscribe();
 
 		expect(received).toHaveLength(1);
@@ -71,7 +71,7 @@ describe("EventsService", () => {
 
 		const event = events.append(board, EventType.TaskCreated, "agent", {});
 		await ctx.em.flush();
-		service.publish([event]);
+		service.publish([EventResponse.from(event)]);
 		sub.unsubscribe();
 
 		expect(received).toHaveLength(1);
@@ -87,7 +87,7 @@ describe("EventsService", () => {
 		const evA = events.append(boardA, EventType.TaskCreated, "agent", {});
 		const evB = events.append(boardB, EventType.TaskCreated, "agent", {});
 		await ctx.em.flush();
-		service.publish([evA, evB]);
+		service.publish([EventResponse.from(evA), EventResponse.from(evB)]);
 		sub.unsubscribe();
 
 		expect(received).toHaveLength(1);

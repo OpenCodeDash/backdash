@@ -1,11 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import {
+	BadRequestException,
+	ConflictException,
+	NotFoundException,
+} from "@nestjs/common";
 import {
 	createTestContext,
 	type TestContext,
 } from "../../test/mikro-orm.test-helper.js";
+import type { MessageEvent } from "@nestjs/common";
 import { KanbanModule } from "./kanban.module.js";
 import { KanbanService } from "./kanban.service.js";
+import { EventsService } from "../events/events.service.js";
+import { ColumnEntity } from "./entity/column.entity.js";
+import { TaskEntity } from "./entity/task.entity.js";
+import { EventEntity } from "../events/entity/event.entity.js";
+import { EventType } from "../events/enum/event-type.enum.js";
 
 let ctx: TestContext;
 let service: KanbanService;
@@ -18,6 +28,10 @@ beforeEach(async () => {
 afterEach(async () => {
 	await ctx.module.close();
 });
+
+async function eventsOfType(type: EventType) {
+	return ctx.em.find(EventEntity, { type }, { orderBy: { seq: "asc" } });
+}
 
 describe("KanbanService", () => {
 	it("createBoard returns a board with the default columns", async () => {
@@ -37,6 +51,12 @@ describe("KanbanService", () => {
 		const loaded = await service.getBoard(created.id);
 		expect(loaded.id).toBe(created.id);
 		expect(loaded.columns.toArray()).toHaveLength(3);
+	});
+
+	it("getBoard throws 404 for a missing board", async () => {
+		await expect(service.getBoard("zzzzzz")).rejects.toBeInstanceOf(
+			NotFoundException
+		);
 	});
 
 	it("boardExists distinguishes present from missing boards", async () => {
@@ -64,5 +84,300 @@ describe("KanbanService", () => {
 		await expect(
 			service.reorderColumns(board.id, ids.slice(0, 2))
 		).rejects.toBeInstanceOf(BadRequestException);
+	});
+
+	it("createBoard emits a board.created event with the board payload", async () => {
+		const board = await service.createBoard("Emitted");
+		const [event] = await eventsOfType(EventType.BoardCreated);
+
+		expect(event).toBeDefined();
+		expect(event.board.id).toBe(board.id);
+		expect(event.actor).toBe("dashboard");
+		expect(event.payload).toMatchObject({ id: board.id, name: "Emitted" });
+	});
+
+	it("renameBoard updates the name and emits board.updated", async () => {
+		const board = await service.createBoard("Old");
+		const renamed = await service.renameBoard(board.id, "New");
+
+		expect(renamed.name).toBe("New");
+		const [event] = await eventsOfType(EventType.BoardUpdated);
+		expect(event).toBeDefined();
+		expect(event.payload).toMatchObject({ id: board.id, name: "New" });
+	});
+
+	it("renameBoard throws 404 for a missing board", async () => {
+		await expect(service.renameBoard("zzzzzz", "New")).rejects.toBeInstanceOf(
+			NotFoundException
+		);
+	});
+
+	it("deleteBoard removes the board and its columns, emitting board.deleted live", async () => {
+		const board = await service.createBoard("Doomed");
+		const eventsService = ctx.module.get(EventsService);
+		const received: MessageEvent[] = [];
+		const sub = eventsService
+			.stream(board.id)
+			.subscribe((m) => received.push(m));
+
+		await service.deleteBoard(board.id);
+
+		sub.unsubscribe();
+
+		expect(await service.boardExists(board.id)).toBe(false);
+		expect(await ctx.em.count(ColumnEntity, { board: board.id })).toBe(0);
+
+		// The board.deleted row itself is cascade-deleted with the board, so
+		// assert on what live subscribers actually receive
+		const deleted = received.find(
+			(m) => (m.data as { type: string }).type === EventType.BoardDeleted
+		);
+		expect(deleted).toBeDefined();
+		expect(deleted!.data).toMatchObject({
+			boardId: board.id,
+			type: EventType.BoardDeleted,
+			actor: "dashboard",
+			payload: { id: board.id, name: "Doomed" },
+		});
+	});
+
+	it("deleteBoard throws 404 for a missing board", async () => {
+		await expect(service.deleteBoard("zzzzzz")).rejects.toBeInstanceOf(
+			NotFoundException
+		);
+	});
+
+	it("createColumn appends at the end and emits column.added", async () => {
+		const board = await service.createBoard("Cols");
+		const column = await service.createColumn(board.id, "Review", true);
+
+		expect(column.position).toBe(3);
+		expect(column.isQueue).toBe(true);
+		const [event] = await eventsOfType(EventType.ColumnAdded);
+		expect(event).toBeDefined();
+		expect(event.payload).toMatchObject({ id: column.id!, name: "Review", isQueue: true });
+	});
+
+	it("createColumn rejects a duplicate name with 409", async () => {
+		const board = await service.createBoard("Dupes");
+		await expect(
+			service.createColumn(board.id, "Todo")
+		).rejects.toBeInstanceOf(ConflictException);
+	});
+
+	it("createColumn throws 404 for a missing board", async () => {
+		await expect(
+			service.createColumn("zzzzzz", "Review")
+		).rejects.toBeInstanceOf(NotFoundException);
+	});
+
+	it("updateColumn changes fields and emits column.updated", async () => {
+		const board = await service.createBoard("Upd");
+		const [todo] = await service.getBoard(board.id).then((b) => b.columns.toArray());
+		const updated = await service.updateColumn(board.id, todo.id!, {
+			name: "Ready",
+			pushDescription: "push me",
+		});
+
+		expect(updated.name).toBe("Ready");
+		expect(updated.pushDescription).toBe("push me");
+		const [event] = await eventsOfType(EventType.ColumnUpdated);
+		expect(event).toBeDefined();
+		expect(event.payload).toMatchObject({ id: todo.id, name: "Ready" });
+	});
+
+	it("updateColumn rejects a rename to a duplicate name with 409", async () => {
+		const board = await service.createBoard("DupUpd");
+		const [todo] = await service.getBoard(board.id).then((b) => b.columns.toArray());
+		await expect(
+			service.updateColumn(board.id, todo.id!, { name: "Done" })
+		).rejects.toBeInstanceOf(ConflictException);
+	});
+
+	it("updateColumn throws 404 for a missing column", async () => {
+		const board = await service.createBoard("MissCol");
+		await expect(
+			service.updateColumn(board.id, 9999, { name: "X" })
+		).rejects.toBeInstanceOf(NotFoundException);
+	});
+
+	it("deleteColumn removes the column and emits column.deleted", async () => {
+		const board = await service.createBoard("DelCol");
+		const [todo] = await service.getBoard(board.id).then((b) => b.columns.toArray());
+		await service.deleteColumn(board.id, todo.id!);
+
+		// Query the DB directly: the cached board instance's columns collection
+		// is not re-populated across forks
+		const remaining = await ctx.em.find(
+			ColumnEntity,
+			{ board: board.id },
+			{ orderBy: { position: "asc" } }
+		);
+		expect(remaining.map((c) => c.name)).toEqual(["In Progress", "Done"]);
+		const [event] = await eventsOfType(EventType.ColumnDeleted);
+		expect(event).toBeDefined();
+		expect(event.payload).toMatchObject({ id: todo.id, name: "Todo" });
+	});
+
+	it("reorderColumns emits column.reordered with the new order", async () => {
+		const board = await service.createBoard("Reordered");
+		const ids = board.columns.map((c) => c.id!);
+		await service.reorderColumns(board.id, [ids[2], ids[0], ids[1]]);
+
+		const [event] = await eventsOfType(EventType.ColumnReordered);
+		expect(event).toBeDefined();
+		const columns = event.payload.columns as { name: string }[];
+		expect(columns.map((c) => c.name)).toEqual(["Done", "Todo", "In Progress"]);
+	});
+
+	it("createTask appends at the end and emits task.created", async () => {
+		const board = await service.createBoard("Tasks");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, {
+			name: "First",
+			description: "do it",
+		});
+
+		expect(task.position).toBe(0);
+		expect(task.description).toBe("do it");
+		const [event] = await eventsOfType(EventType.TaskCreated);
+		expect(event).toBeDefined();
+		expect(event.payload).toMatchObject({ name: "First", description: "do it" });
+	});
+
+	it("createTask throws 404 for a missing column", async () => {
+		const board = await service.createBoard("TaskMissCol");
+		await expect(
+			service.createTask(board.id, 9999, { name: "X" })
+		).rejects.toBeInstanceOf(NotFoundException);
+	});
+
+	it("updateTask changes fields and emits task.updated", async () => {
+		const board = await service.createBoard("UpdTask");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "Old" });
+		const updated = await service.updateTask(board.id, todo.id!, task.id!, {
+			name: "New",
+			description: "desc",
+		});
+
+		expect(updated.name).toBe("New");
+		expect(updated.description).toBe("desc");
+		const [event] = await eventsOfType(EventType.TaskUpdated);
+		expect(event.payload).toMatchObject({ name: "New", description: "desc" });
+	});
+
+	it("updateTask throws 404 for a missing task", async () => {
+		const board = await service.createBoard("UpdTaskMiss");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		await expect(
+			service.updateTask(board.id, todo.id!, 9999, { name: "X" })
+		).rejects.toBeInstanceOf(NotFoundException);
+	});
+
+	it("deleteTask removes the task and emits task.deleted", async () => {
+		const board = await service.createBoard("DelTask");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "Gone" });
+		await service.deleteTask(board.id, todo.id!, task.id!);
+
+		expect(await ctx.em.count(TaskEntity, { id: task.id! })).toBe(0);
+		const [event] = await eventsOfType(EventType.TaskDeleted);
+		expect(event).toBeDefined();
+		expect(event.payload).toMatchObject({ name: "Gone", columnId: todo.id });
+	});
+
+	it("moveTask reorders within a column and emits task.moved", async () => {
+		const board = await service.createBoard("MvIn");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		await service.createTask(board.id, todo.id!, { name: "A" });
+		const b = await service.createTask(board.id, todo.id!, { name: "B" });
+
+		await service.moveTask(board.id, b.id!, { columnId: todo.id!, position: 0 });
+
+		const after = await ctx.em.find(TaskEntity, { column: todo.id! }, {
+			orderBy: { position: "asc" },
+		});
+		expect(after.map((t) => t.name)).toEqual(["B", "A"]);
+		const [event] = await eventsOfType(EventType.TaskMoved);
+		expect(event.payload).toMatchObject({ name: "B", columnId: todo.id });
+	});
+
+	it("moveTask transfers a task between columns and emits task.moved", async () => {
+		const board = await service.createBoard("MvX");
+		const cols = (await service.getBoard(board.id)).columns.toArray();
+		const todo = cols.find((c) => c.name === "Todo")!;
+		const inProgress = cols.find((c) => c.name === "In Progress")!;
+		const task = await service.createTask(board.id, todo.id!, { name: "Move me" });
+
+		await service.moveTask(board.id, task.id!, { columnId: inProgress.id! });
+
+		const moved = await ctx.em.find(TaskEntity, { column: inProgress.id! });
+		expect(moved.map((t) => t.name)).toEqual(["Move me"]);
+		expect(await ctx.em.count(TaskEntity, { column: todo.id! })).toBe(0);
+		const [event] = await eventsOfType(EventType.TaskMoved);
+		expect(event.payload).toMatchObject({ name: "Move me", columnId: inProgress.id });
+	});
+
+	it("claimTask marks the task and emits task.claimed with the actor", async () => {
+		const board = await service.createBoard("Claim");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "Claim me" });
+
+		const claimed = await service.claimTask(board.id, todo.id!, task.id!, "agent-7");
+		expect(claimed.claimedBy).toBe("agent-7");
+		const [event] = await eventsOfType(EventType.TaskClaimed);
+		expect(event.actor).toBe("agent-7");
+		expect(event.payload).toMatchObject({ name: "Claim me", claimedBy: "agent-7" });
+	});
+
+	it("claimTask defaults the actor to the dashboard", async () => {
+		const board = await service.createBoard("ClaimDef");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "X" });
+		const claimed = await service.claimTask(board.id, todo.id!, task.id!);
+		expect(claimed.claimedBy).toBe("dashboard");
+	});
+
+	it("claimTask rejects a non-queue column with 400", async () => {
+		const board = await service.createBoard("ClaimNoQueue");
+		const cols = (await service.getBoard(board.id)).columns.toArray();
+		const inProgress = cols.find((c) => c.name === "In Progress")!;
+		const task = await service.createTask(board.id, inProgress.id!, { name: "No queue" });
+		await expect(
+			service.claimTask(board.id, inProgress.id!, task.id!)
+		).rejects.toBeInstanceOf(BadRequestException);
+	});
+
+	it("claimTask rejects an already-claimed task with 409", async () => {
+		const board = await service.createBoard("ClaimTwice");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "Twice" });
+		await service.claimTask(board.id, todo.id!, task.id!, "agent-1");
+		await expect(
+			service.claimTask(board.id, todo.id!, task.id!, "agent-2")
+		).rejects.toBeInstanceOf(ConflictException);
+	});
+
+	it("releaseTask clears the claim and emits task.released", async () => {
+		const board = await service.createBoard("Release");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "Release me" });
+		await service.claimTask(board.id, todo.id!, task.id!, "agent-1");
+		const released = await service.releaseTask(board.id, todo.id!, task.id!);
+
+		expect(released.claimedBy).toBe("");
+		const [event] = await eventsOfType(EventType.TaskReleased);
+		expect(event).toBeDefined();
+		expect(event.payload).toMatchObject({ name: "Release me", claimedBy: null });
+	});
+
+	it("releaseTask rejects an unclaimed task with 409", async () => {
+		const board = await service.createBoard("ReleaseNone");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "None" });
+		await expect(
+			service.releaseTask(board.id, todo.id!, task.id!)
+		).rejects.toBeInstanceOf(ConflictException);
 	});
 });
