@@ -44,6 +44,35 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+## Database & migrations
+
+Backdash uses SQLite (via MikroORM). The database file is controlled by the
+`DATABASE_PATH` environment variable and defaults to `./app.sqlite`.
+
+Pending migrations are applied automatically when the app boots, so a brand-new
+`DATABASE_PATH` is ready to use the moment the process starts — no separate
+migration step is required. `migration:up` is idempotent: on an already-migrated
+database it does nothing.
+
+You can still drive migrations manually:
+
+```bash
+# build first (migrations reference compiled entities under dist/)
+$ npm run build
+
+# create a new migration after changing entities
+$ npm run migration:create
+
+# apply pending migrations
+$ npm run migration:up
+
+# roll back the last migration
+$ npm run migration:down
+
+# list migrations and which have been applied
+$ npm run migration:list
+```
+
 ## Run tests
 
 ```bash
