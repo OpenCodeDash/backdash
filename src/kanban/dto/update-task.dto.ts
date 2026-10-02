@@ -89,4 +89,15 @@ export class UpdateTaskDto {
 		description: "Replaces the task's tags with this exact set of tag ids",
 	})
 	tagIds?: number[];
+
+	@IsOptional()
+	@IsArray()
+	@IsInt({ each: true })
+	@ApiProperty({
+		type: [Number],
+		required: false,
+		description:
+			"Replaces the task's dependencies with this exact set of task ids; must belong to the same board",
+	})
+	dependsOn?: number[];
 }

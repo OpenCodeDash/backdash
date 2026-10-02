@@ -384,6 +384,13 @@ export class KanbanService {
 		const board = await this.loadBoard(em, boardId);
 		const column = await this.loadColumn(em, boardId, columnId);
 		const tags = await this.resolveTags(em, boardId, dto.tagIds);
+		// A brand-new task has no id yet, so it cannot be part of a cycle
+		const dependsOn = await this.resolveDependencies(
+			em,
+			boardId,
+			null,
+			dto.dependsOn
+		);
 
 		const event = this.eventsRepo(em).append(
 			board,
@@ -401,6 +408,7 @@ export class KanbanService {
 			dueAt: parseDueAt(dto.dueAt),
 		});
 		task.tags.set(tags);
+		task.dependsOn.set(dependsOn);
 
 		// task.id only exists after the first flush, so the payload is filled
 		// in a second one, mirroring createColumn
@@ -443,6 +451,11 @@ export class KanbanService {
 		}
 		if (dto.tagIds !== undefined) {
 			task.tags.set(await this.resolveTags(em, boardId, dto.tagIds));
+		}
+		if (dto.dependsOn !== undefined) {
+			task.dependsOn.set(
+				await this.resolveDependencies(em, boardId, taskId, dto.dependsOn)
+			);
 		}
 
 		// Flush before building the payload so onUpdate has refreshed
@@ -649,7 +662,7 @@ export class KanbanService {
 			? await em.findOne(
 					ColumnEntity,
 					{ id: columnId, board: boardId },
-					{ populate: ["tasks", "tasks.tags"] }
+					{ populate: ["tasks", "tasks.tags", "tasks.dependsOn", "tasks.dependents"] }
 				)
 			: await em.findOne(ColumnEntity, { id: columnId, board: boardId });
 
@@ -700,13 +713,13 @@ export class KanbanService {
 		em: EntityManager,
 		columnId: number,
 		taskId: number,
-		includeTags = false
+		includeRelations = false
 	): Promise<TaskEntity> {
-		const task = includeTags
+		const task = includeRelations
 			? await em.findOne(
 					TaskEntity,
 					{ id: taskId, column: columnId },
-					{ populate: ["tags"] }
+					{ populate: ["tags", "dependsOn", "dependents"] }
 				)
 			: await em.findOne(TaskEntity, { id: taskId, column: columnId });
 
@@ -725,10 +738,14 @@ export class KanbanService {
 		em: EntityManager,
 		boardId: string,
 		taskId: number,
-		includeTags = false
+		includeRelations = false
 	): Promise<TaskEntity> {
-		const task = includeTags
-			? await em.findOne(TaskEntity, { id: taskId }, { populate: ["tags"] })
+		const task = includeRelations
+			? await em.findOne(
+					TaskEntity,
+					{ id: taskId },
+					{ populate: ["tags", "dependsOn", "dependents"] }
+				)
 			: await em.findOne(TaskEntity, { id: taskId });
 
 		if (!task) {
@@ -784,6 +801,93 @@ export class KanbanService {
 		}
 
 		return tags;
+	}
+
+	// Resolves dependency ids against the board, rejecting ids that do not
+	// belong to it, a self-reference, and any edge that would create a cycle
+	// (`selfId` already reachable through the requested tasks' dependents).
+	private async resolveDependencies(
+		em: EntityManager,
+		boardId: string,
+		selfId: number | null,
+		taskIds: number[] | undefined
+	): Promise<TaskEntity[]> {
+		if (!taskIds || taskIds.length === 0) {
+			return [];
+		}
+
+		const unique = [...new Set(taskIds)];
+
+		if (selfId !== null && unique.includes(selfId)) {
+			throw new BadRequestException(
+				`Task '${selfId}' cannot depend on itself`
+			);
+		}
+
+		const tasks = await em.find(TaskEntity, {
+			id: { $in: unique },
+			column: { board: boardId },
+		});
+
+		if (tasks.length !== unique.length) {
+			const found = new Set(tasks.map((task) => task.id as number));
+			const missing = unique.filter((id) => !found.has(id));
+
+			throw new NotFoundException(
+				`Task(s) not found on board '${boardId}': ${missing.join(", ")}`
+			);
+		}
+
+		if (selfId !== null && (await this.wouldCreateCycle(em, boardId, selfId, unique))) {
+			throw new BadRequestException(
+				"Dependency would create a cycle"
+			);
+		}
+
+		return tasks;
+	}
+
+	// `selfId` would depend on each target; that closes a cycle when a target
+	// already depends (directly or transitively) on `selfId`. So follow each
+	// target's own `dependsOn` chain and look for `selfId`. The board is small,
+	// so the whole dependency graph is loaded once and traversed in memory.
+	private async wouldCreateCycle(
+		em: EntityManager,
+		boardId: string,
+		selfId: number,
+		targetIds: number[]
+	): Promise<boolean> {
+		const tasks = await em.find(
+			TaskEntity,
+			{ column: { board: boardId } },
+			{ populate: ["dependsOn"] }
+		);
+		const dependsOf = new Map<number, number[]>();
+
+		for (const task of tasks) {
+			dependsOf.set(
+				task.id as number,
+				task.dependsOn.isInitialized()
+					? task.dependsOn.getItems().map((t) => t.id as number)
+					: []
+			);
+		}
+
+		const visited = new Set<number>();
+		const stack = [...targetIds];
+
+		while (stack.length > 0) {
+			const current = stack.pop() as number;
+			if (current === selfId) return true;
+			if (visited.has(current)) continue;
+			visited.add(current);
+
+			for (const next of dependsOf.get(current) ?? []) {
+				stack.push(next);
+			}
+		}
+
+		return false;
 	}
 }
 

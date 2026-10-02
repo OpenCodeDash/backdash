@@ -84,4 +84,14 @@ export class CreateTaskDto {
 		description: "Tags (by id) to attach; must belong to the same board",
 	})
 	tagIds?: number[];
+
+	@IsOptional()
+	@IsArray()
+	@IsInt({ each: true })
+	@ApiProperty({
+		type: [Number],
+		required: false,
+		description: "Tasks (by id) this task depends on; must belong to the same board",
+	})
+	dependsOn?: number[];
 }

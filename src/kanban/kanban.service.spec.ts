@@ -629,3 +629,171 @@ describe("KanbanService tags and task metadata", () => {
 		expect(tasks[0].tags.map((t) => t.name)).toEqual(["x"]);
 	});
 });
+
+describe("KanbanService task dependencies", () => {
+	async function firstColumn(boardId: string) {
+		const board = await service.getBoard(boardId);
+		return board.columns.toArray()[0];
+	}
+
+	async function allTasks(boardId: string): Promise<TaskEntity[]> {
+		ctx.em.clear();
+		const board = await service.getBoard(boardId);
+		const tasks: TaskEntity[] = [];
+		for (const column of board.columns) {
+			for (const task of column.tasks) {
+				tasks.push(task);
+			}
+		}
+		return tasks;
+	}
+
+	it("createTask stores dependencies and emits them on task.created", async () => {
+		const board = await service.createBoard("DepsCreate");
+		const column = await firstColumn(board.id);
+		const base = await service.createTask(board.id, column.id!, { name: "Base" });
+		const dependent = await service.createTask(board.id, column.id!, {
+			name: "Dependent",
+			dependsOn: [base.id!],
+		});
+
+		expect(dependent.dependsOn.getItems().map((t) => t.id)).toEqual([base.id]);
+
+		const created = await eventsOfType(EventType.TaskCreated);
+		const event = created.find(
+			(e) => (e.payload as { name: string }).name === "Dependent"
+		)!;
+		expect((event.payload as { dependsOn: number[] }).dependsOn).toEqual([
+			base.id,
+		]);
+	});
+
+	it("createTask rejects a dependency from another board with 404", async () => {
+		const one = await service.createBoard("DepsCreateOne");
+		const two = await service.createBoard("DepsCreateTwo");
+		const colOne = await firstColumn(one.id);
+		const colTwo = await firstColumn(two.id);
+		const foreign = await service.createTask(two.id, colTwo.id!, { name: "Foreign" });
+
+		await expect(
+			service.createTask(one.id, colOne.id!, {
+				name: "Local",
+				dependsOn: [foreign.id!],
+			})
+		).rejects.toBeInstanceOf(NotFoundException);
+	});
+
+	it("updateTask replaces and clears dependencies", async () => {
+		const board = await service.createBoard("DepsUpdate");
+		const column = await firstColumn(board.id);
+		const a = await service.createTask(board.id, column.id!, { name: "A" });
+		const b = await service.createTask(board.id, column.id!, { name: "B" });
+		const c = await service.createTask(board.id, column.id!, { name: "C" });
+
+		const updated = await service.updateTask(board.id, column.id!, c.id!, {
+			dependsOn: [a.id!, b.id!],
+		});
+		expect(updated.dependsOn.getItems().map((t) => t.name).sort()).toEqual([
+			"A",
+			"B",
+		]);
+
+		const cleared = await service.updateTask(board.id, column.id!, c.id!, {
+			dependsOn: [],
+		});
+		expect(cleared.dependsOn.getItems()).toEqual([]);
+	});
+
+	it("updateTask emits the new dependencies on task.updated", async () => {
+		const board = await service.createBoard("DepsEvent");
+		const column = await firstColumn(board.id);
+		const a = await service.createTask(board.id, column.id!, { name: "A" });
+		const b = await service.createTask(board.id, column.id!, { name: "B" });
+
+		await service.updateTask(board.id, column.id!, b.id!, { dependsOn: [a.id!] });
+
+		const updated = await eventsOfType(EventType.TaskUpdated);
+		const event = updated.find(
+			(e) => (e.payload as { name: string }).name === "B"
+		)!;
+		expect((event.payload as { dependsOn: number[] }).dependsOn).toEqual([
+			a.id,
+		]);
+	});
+
+	it("exposes dependents on the depended-upon task via getBoard", async () => {
+		const board = await service.createBoard("DepsReverse");
+		const column = await firstColumn(board.id);
+		const a = await service.createTask(board.id, column.id!, { name: "A" });
+		await service.createTask(board.id, column.id!, {
+			name: "B",
+			dependsOn: [a.id!],
+		});
+
+		const tasks = await allTasks(board.id);
+		const aTask = tasks.find((t) => t.id === a.id)!;
+		expect(aTask.dependents.getItems().map((t) => t.name)).toEqual(["B"]);
+	});
+
+	it("rejects a self-dependency with 400", async () => {
+		const board = await service.createBoard("DepsSelf");
+		const column = await firstColumn(board.id);
+		const task = await service.createTask(board.id, column.id!, { name: "Self" });
+
+		await expect(
+			service.updateTask(board.id, column.id!, task.id!, {
+				dependsOn: [task.id!],
+			})
+		).rejects.toBeInstanceOf(BadRequestException);
+	});
+
+	it("rejects a direct cycle with 400", async () => {
+		const board = await service.createBoard("DepsCycle");
+		const column = await firstColumn(board.id);
+		const a = await service.createTask(board.id, column.id!, { name: "A" });
+		const b = await service.createTask(board.id, column.id!, {
+			name: "B",
+			dependsOn: [a.id!],
+		});
+
+		// b -> a, so making a depend on b closes the loop
+		await expect(
+			service.updateTask(board.id, column.id!, a.id!, { dependsOn: [b.id!] })
+		).rejects.toBeInstanceOf(BadRequestException);
+	});
+
+	it("rejects a transitive cycle with 400", async () => {
+		const board = await service.createBoard("DepsTransitive");
+		const column = await firstColumn(board.id);
+		const a = await service.createTask(board.id, column.id!, { name: "A" });
+		const b = await service.createTask(board.id, column.id!, {
+			name: "B",
+			dependsOn: [a.id!],
+		});
+		const c = await service.createTask(board.id, column.id!, {
+			name: "C",
+			dependsOn: [b.id!],
+		});
+
+		// c -> b -> a, so making a depend on c closes the loop
+		await expect(
+			service.updateTask(board.id, column.id!, a.id!, { dependsOn: [c.id!] })
+		).rejects.toBeInstanceOf(BadRequestException);
+	});
+
+	it("clears dependency edges when a depended-upon task is deleted", async () => {
+		const board = await service.createBoard("DepsDelete");
+		const column = await firstColumn(board.id);
+		const a = await service.createTask(board.id, column.id!, { name: "A" });
+		const b = await service.createTask(board.id, column.id!, {
+			name: "B",
+			dependsOn: [a.id!],
+		});
+
+		await service.deleteTask(board.id, column.id!, a.id!);
+
+		const tasks = await allTasks(board.id);
+		const bTask = tasks.find((t) => t.id === b.id)!;
+		expect(bTask.dependsOn.getItems()).toEqual([]);
+	});
+});

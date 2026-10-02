@@ -849,6 +849,109 @@
       "comment": null
     },
     {
+      "name": "tasks_depends_on",
+      "columns": {
+        "tasks_1_id": {
+          "name": "tasks_1_id",
+          "type": "integer",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
+        "tasks_2_id": {
+          "name": "tasks_2_id",
+          "type": "integer",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        }
+      },
+      "indexes": [
+        {
+          "columnNames": [
+            "tasks_1_id",
+            "tasks_2_id"
+          ],
+          "composite": true,
+          "constraint": true,
+          "keyName": "primary",
+          "primary": true,
+          "unique": true
+        },
+        {
+          "columnNames": [
+            "tasks_1_id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "tasks_depends_on_tasks_1_id_index",
+          "primary": false,
+          "unique": false
+        },
+        {
+          "columnNames": [
+            "tasks_2_id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "tasks_depends_on_tasks_2_id_index",
+          "primary": false,
+          "unique": false
+        }
+      ],
+      "checks": [],
+      "triggers": [],
+      "foreignKeys": {
+        "tasks_depends_on_tasks_1_id_foreign": {
+          "columnNames": [
+            "tasks_1_id"
+          ],
+          "constraintName": "tasks_depends_on_tasks_1_id_foreign",
+          "localTableName": "tasks_depends_on",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "referencedTableName": "tasks",
+          "updateRule": "cascade",
+          "deleteRule": "cascade"
+        },
+        "tasks_depends_on_tasks_2_id_foreign": {
+          "columnNames": [
+            "tasks_2_id"
+          ],
+          "constraintName": "tasks_depends_on_tasks_2_id_foreign",
+          "localTableName": "tasks_depends_on",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "referencedTableName": "tasks",
+          "updateRule": "cascade",
+          "deleteRule": "cascade"
+        }
+      },
+      "comment": null
+    },
+    {
       "name": "tasks_tags",
       "columns": {
         "tag_entity_id": {
