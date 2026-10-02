@@ -167,7 +167,10 @@ export class KanbanService {
 	): Promise<ColumnEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
-		const column = await this.loadColumn(em, boardId, columnId);
+		// Load with tasks populated so the response (and the column.updated
+		// event payload) carry the column's tasks; otherwise they degrade to
+		// [] and the client's column patch would wipe them
+		const column = await this.loadColumn(em, boardId, columnId, ["tasks"]);
 
 		if (dto.name !== undefined) {
 			column.name = dto.name;
@@ -487,9 +490,14 @@ export class KanbanService {
 	private async loadColumn(
 		em: EntityManager,
 		boardId: string,
-		columnId: number
+		columnId: number,
+		populate?: (keyof ColumnEntity)[]
 	): Promise<ColumnEntity> {
-		const column = await em.findOne(ColumnEntity, { id: columnId, board: boardId });
+		const column = await em.findOne(
+			ColumnEntity,
+			{ id: columnId, board: boardId },
+			populate ? { populate } : undefined
+		);
 
 		if (!column) {
 			throw new NotFoundException(
