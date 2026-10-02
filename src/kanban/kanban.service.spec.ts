@@ -14,6 +14,8 @@ import { KanbanService } from "./kanban.service.js";
 import { EventsService } from "../events/events.service.js";
 import { ColumnEntity } from "./entity/column.entity.js";
 import { TaskEntity } from "./entity/task.entity.js";
+import { TagEntity } from "./entity/tag.entity.js";
+import { TaskPriority } from "./enum/task-priority.enum.js";
 import { EventEntity } from "../events/entity/event.entity.js";
 import { EventType } from "../events/enum/event-type.enum.js";
 
@@ -379,5 +381,235 @@ describe("KanbanService", () => {
 		await expect(
 			service.releaseTask(board.id, todo.id!, task.id!)
 		).rejects.toBeInstanceOf(ConflictException);
+	});
+});
+
+describe("KanbanService tags and task metadata", () => {
+	async function firstColumn(boardId: string) {
+		const board = await service.getBoard(boardId);
+		return board.columns.toArray()[0];
+	}
+
+	it("createTag stores its fields and emits tag.added", async () => {
+		const board = await service.createBoard("Tags");
+		const tag = await service.createTag(board.id, {
+			name: "frontend",
+			description: "UI work",
+			prompt: "Follow the design system",
+			color: "#ff0000",
+		});
+
+		expect(tag.name).toBe("frontend");
+		expect(tag.description).toBe("UI work");
+		expect(tag.prompt).toBe("Follow the design system");
+		const [event] = await eventsOfType(EventType.TagAdded);
+		expect(event).toBeDefined();
+		expect(event.payload).toMatchObject({
+			name: "frontend",
+			description: "UI work",
+			color: "#ff0000",
+		});
+	});
+
+	it("createTag rejects a duplicate name with 409", async () => {
+		const board = await service.createBoard("TagDupes");
+		await service.createTag(board.id, { name: "dupe" });
+		await expect(
+			service.createTag(board.id, { name: "dupe" })
+		).rejects.toBeInstanceOf(ConflictException);
+	});
+
+	it("createTag allows the same name on different boards", async () => {
+		const one = await service.createBoard("TagOne");
+		const two = await service.createBoard("TagTwo");
+		await expect(service.createTag(one.id, { name: "same" })).resolves.toBeDefined();
+		await expect(service.createTag(two.id, { name: "same" })).resolves.toBeDefined();
+	});
+
+	it("createTag throws 404 for a missing board", async () => {
+		await expect(
+			service.createTag("zzzzzz", { name: "x" })
+		).rejects.toBeInstanceOf(NotFoundException);
+	});
+
+	it("listTags returns the board's tags alphabetically", async () => {
+		const board = await service.createBoard("TagList");
+		await service.createTag(board.id, { name: "b" });
+		await service.createTag(board.id, { name: "a" });
+		expect((await service.listTags(board.id)).map((tag) => tag.name)).toEqual([
+			"a",
+			"b",
+		]);
+		await expect(service.listTags("zzzzzz")).rejects.toBeInstanceOf(
+			NotFoundException
+		);
+	});
+
+	it("updateTag updates fields, clears with null, and emits tag.updated", async () => {
+		const board = await service.createBoard("TagUpd");
+		const tag = await service.createTag(board.id, {
+			name: "t",
+			color: "#000000",
+		});
+		const updated = await service.updateTag(board.id, tag.id!, {
+			name: "t2",
+			color: null,
+		});
+
+		expect(updated.name).toBe("t2");
+		expect(updated.color).toBeNull();
+		const [event] = await eventsOfType(EventType.TagUpdated);
+		expect(event.payload).toMatchObject({ name: "t2", color: null });
+	});
+
+	it("updateTag rejects a rename to a duplicate name with 409", async () => {
+		const board = await service.createBoard("TagUpdDup");
+		await service.createTag(board.id, { name: "one" });
+		const two = await service.createTag(board.id, { name: "two" });
+		await expect(
+			service.updateTag(board.id, two.id!, { name: "one" })
+		).rejects.toBeInstanceOf(ConflictException);
+	});
+
+	it("updateTag throws 404 for a missing tag", async () => {
+		const board = await service.createBoard("TagUpdMiss");
+		await expect(
+			service.updateTag(board.id, 9999, { name: "x" })
+		).rejects.toBeInstanceOf(NotFoundException);
+	});
+
+	it("deleteTag removes the tag and emits tag.deleted", async () => {
+		const board = await service.createBoard("TagDel");
+		const tag = await service.createTag(board.id, { name: "gone" });
+		await service.deleteTag(board.id, tag.id!);
+
+		expect(await ctx.em.count(TagEntity, { board: board.id })).toBe(0);
+		const [event] = await eventsOfType(EventType.TagDeleted);
+		expect(event.payload).toMatchObject({ id: tag.id, name: "gone" });
+	});
+
+	it("createTask persists metadata and attaches tags", async () => {
+		const board = await service.createBoard("TaskMeta");
+		const column = await firstColumn(board.id);
+		const tag = await service.createTag(board.id, {
+			name: "backend",
+			prompt: "use pnpm",
+		});
+		const task = await service.createTask(board.id, column.id!, {
+			name: "API",
+			priority: TaskPriority.High,
+			estimate: 3,
+			assignee: "alice",
+			dueAt: "2026-11-01",
+			tagIds: [tag.id!],
+		});
+
+		expect(task.priority).toBe(TaskPriority.High);
+		expect(task.estimate).toBe(3);
+		expect(task.assignee).toBe("alice");
+		expect(task.dueAt?.toISOString()).toBe("2026-11-01T00:00:00.000Z");
+		expect(task.tags.getItems().map((t) => t.name)).toEqual(["backend"]);
+
+		const [event] = await eventsOfType(EventType.TaskCreated);
+		expect(event.payload).toMatchObject({
+			name: "API",
+			priority: "high",
+			estimate: 3,
+			assignee: "alice",
+			dueAt: "2026-11-01T00:00:00.000Z",
+		});
+		expect(
+			(event.payload.tags as { name: string }[]).map((t) => t.name)
+		).toEqual(["backend"]);
+	});
+
+	it("updateTask replaces tags and clears nullable fields with null", async () => {
+		const board = await service.createBoard("TaskUpdMeta");
+		const column = await firstColumn(board.id);
+		const first = await service.createTag(board.id, { name: "aaa" });
+		const second = await service.createTag(board.id, { name: "ccc" });
+		const task = await service.createTask(board.id, column.id!, {
+			name: "T",
+			priority: TaskPriority.Low,
+			tagIds: [first.id!],
+		});
+
+		const updated = await service.updateTask(board.id, column.id!, task.id!, {
+			priority: null,
+			assignee: "bob",
+			tagIds: [second.id!],
+		});
+
+		expect(updated.priority).toBeNull();
+		expect(updated.estimate).toBeNull();
+		expect(updated.assignee).toBe("bob");
+		expect(updated.tags.getItems().map((t) => t.name)).toEqual(["ccc"]);
+
+		const [event] = await eventsOfType(EventType.TaskUpdated);
+		expect(event.payload).toMatchObject({
+			id: task.id,
+			priority: null,
+			assignee: "bob",
+		});
+		expect(
+			(event.payload.tags as { name: string }[]).map((t) => t.name)
+		).toEqual(["ccc"]);
+	});
+
+	it("updateTask rejects tags from another board with 404", async () => {
+		const one = await service.createBoard("TagBorrow1");
+		const two = await service.createBoard("TagBorrow2");
+		const column = await firstColumn(one.id);
+		const foreign = await service.createTag(two.id, { name: "foreign" });
+		const task = await service.createTask(one.id, column.id!, { name: "T" });
+
+		await expect(
+			service.updateTask(one.id, column.id!, task.id!, {
+				tagIds: [foreign.id!],
+			})
+		).rejects.toBeInstanceOf(NotFoundException);
+	});
+
+	it("getBoard includes the board's tags", async () => {
+		const board = await service.createBoard("BoardTags");
+		await service.createTag(board.id, { name: "zeta" });
+		await service.createTag(board.id, { name: "alpha" });
+
+		// Drop the identity map so getBoard reloads the collection rather than
+		// returning the board cached by createBoard before the tags existed
+		ctx.em.clear();
+		const loaded = await service.getBoard(board.id);
+		expect(loaded.tags.getItems().map((t) => t.name)).toEqual(["alpha", "zeta"]);
+	});
+
+	it("claimTask response keeps the task's tags", async () => {
+		const board = await service.createBoard("ClaimTags");
+		const column = await firstColumn(board.id);
+		const tag = await service.createTag(board.id, { name: "codebase:foo" });
+		const task = await service.createTask(board.id, column.id!, {
+			name: "T",
+			tagIds: [tag.id!],
+		});
+
+		const claimed = await service.claimTask(board.id, column.id!, task.id!, "agent-1");
+		expect(claimed.tags.getItems().map((t) => t.name)).toEqual(["codebase:foo"]);
+	});
+
+	it("updateColumn keeps its tasks' tags in the event payload", async () => {
+		const board = await service.createBoard("ColTags");
+		const columns = (await service.getBoard(board.id)).columns.toArray();
+		const inProgress = columns[1];
+		const tag = await service.createTag(board.id, { name: "x" });
+		await service.createTask(board.id, inProgress.id!, {
+			name: "T",
+			tagIds: [tag.id!],
+		});
+
+		await service.updateColumn(board.id, inProgress.id!, { isQueue: true });
+
+		const [event] = await eventsOfType(EventType.ColumnUpdated);
+		const tasks = (event.payload as { tasks: { tags: { name: string }[] }[] })
+			.tasks;
+		expect(tasks[0].tags.map((t) => t.name)).toEqual(["x"]);
 	});
 });

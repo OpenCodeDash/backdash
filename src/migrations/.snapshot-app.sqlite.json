@@ -399,8 +399,216 @@
       "comment": null
     },
     {
+      "name": "tags",
+      "columns": {
+        "board_id": {
+          "name": "board_id",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": true,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "color": {
+          "name": "color",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "unsigned": false,
+          "autoincrement": true,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        }
+      },
+      "indexes": [
+        {
+          "columnNames": [
+            "id"
+          ],
+          "composite": false,
+          "constraint": true,
+          "keyName": "primary",
+          "primary": true,
+          "unique": true
+        },
+        {
+          "columnNames": [
+            "board_id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "tags_board_id_index",
+          "primary": false,
+          "unique": false
+        },
+        {
+          "columnNames": [
+            "board_id",
+            "name"
+          ],
+          "composite": true,
+          "constraint": true,
+          "keyName": "tags_board_id_name_unique",
+          "primary": false,
+          "unique": true
+        }
+      ],
+      "checks": [],
+      "triggers": [],
+      "foreignKeys": {
+        "tags_board_id_foreign": {
+          "columnNames": [
+            "board_id"
+          ],
+          "constraintName": "tags_board_id_foreign",
+          "localTableName": "tags",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "referencedTableName": "boards",
+          "deleteRule": "cascade"
+        }
+      },
+      "comment": null
+    },
+    {
       "name": "tasks",
       "columns": {
+        "assignee": {
+          "name": "assignee",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
         "claimed_by": {
           "name": "claimed_by",
           "type": "text",
@@ -435,6 +643,23 @@
           "enumItems": [],
           "mappedType": "integer"
         },
+        "created_at": {
+          "name": "created_at",
+          "type": "datetime",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
         "description": {
           "name": "description",
           "type": "text",
@@ -451,6 +676,40 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "text"
+        },
+        "due_at": {
+          "name": "due_at",
+          "type": "datetime",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "datetime"
+        },
+        "estimate": {
+          "name": "estimate",
+          "type": "integer",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "integer"
         },
         "id": {
           "name": "id",
@@ -502,6 +761,40 @@
           "collation": null,
           "enumItems": [],
           "mappedType": "integer"
+        },
+        "priority": {
+          "name": "priority",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "datetime",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "datetime"
         }
       },
       "indexes": [
@@ -550,6 +843,109 @@
             "id"
           ],
           "referencedTableName": "columns",
+          "deleteRule": "cascade"
+        }
+      },
+      "comment": null
+    },
+    {
+      "name": "tasks_tags",
+      "columns": {
+        "tag_entity_id": {
+          "name": "tag_entity_id",
+          "type": "integer",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
+        "task_entity_id": {
+          "name": "task_entity_id",
+          "type": "integer",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": true,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        }
+      },
+      "indexes": [
+        {
+          "columnNames": [
+            "task_entity_id",
+            "tag_entity_id"
+          ],
+          "composite": true,
+          "constraint": true,
+          "keyName": "primary",
+          "primary": true,
+          "unique": true
+        },
+        {
+          "columnNames": [
+            "tag_entity_id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "tasks_tags_tag_entity_id_index",
+          "primary": false,
+          "unique": false
+        },
+        {
+          "columnNames": [
+            "task_entity_id"
+          ],
+          "composite": false,
+          "constraint": false,
+          "keyName": "tasks_tags_task_entity_id_index",
+          "primary": false,
+          "unique": false
+        }
+      ],
+      "checks": [],
+      "triggers": [],
+      "foreignKeys": {
+        "tasks_tags_tag_entity_id_foreign": {
+          "columnNames": [
+            "tag_entity_id"
+          ],
+          "constraintName": "tasks_tags_tag_entity_id_foreign",
+          "localTableName": "tasks_tags",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "referencedTableName": "tags",
+          "updateRule": "cascade",
+          "deleteRule": "cascade"
+        },
+        "tasks_tags_task_entity_id_foreign": {
+          "columnNames": [
+            "task_entity_id"
+          ],
+          "constraintName": "tasks_tags_task_entity_id_foreign",
+          "localTableName": "tasks_tags",
+          "referencedColumnNames": [
+            "id"
+          ],
+          "referencedTableName": "tasks",
+          "updateRule": "cascade",
           "deleteRule": "cascade"
         }
       },

@@ -16,6 +16,8 @@ import { CreateColumnDto } from "./dto/create-column.dto.js";
 import { UpdateColumnDto } from "./dto/update-column.dto.js";
 import { CreateTaskDto } from "./dto/create-task.dto.js";
 import { UpdateTaskDto } from "./dto/update-task.dto.js";
+import { CreateTagDto } from "./dto/create-tag.dto.js";
+import { UpdateTagDto } from "./dto/update-tag.dto.js";
 import { MoveTaskDto } from "./dto/move-task.dto.js";
 import { ClaimTaskDto } from "./dto/claim-task.dto.js";
 import {
@@ -31,6 +33,7 @@ import { BoardSummaryResponse } from "./response/board-summary.response.js";
 import { ReorderColumnsDto } from "./dto/reorder-columns.dto.js";
 import { ColumnResponse } from "./response/column.response.js";
 import { TaskResponse } from "./response/task.response.js";
+import { TagResponse } from "./response/tag.response.js";
 
 @Controller("kanban")
 export class KanbanController {
@@ -160,6 +163,60 @@ export class KanbanController {
 		@Param("columnId", ParseIntPipe) columnId: number
 	): Promise<void> {
 		await this.kanbanService.deleteColumn(boardId, columnId);
+	}
+
+	@Get(":boardId/tags")
+	@ApiOperation({ operationId: "listTags" })
+	@ApiOkResponse({ type: [TagResponse] })
+	@ApiNotFoundResponse({ description: "Board not found" })
+	async listTags(
+		@Param("boardId") boardId: string
+	): Promise<TagResponse[]> {
+		const tags = await this.kanbanService.listTags(boardId);
+		return tags.map((tag) => TagResponse.from(tag));
+	}
+
+	@Post(":boardId/tags")
+	@ApiOperation({ operationId: "createTag" })
+	@ApiCreatedResponse({ type: TagResponse })
+	@ApiConflictResponse({
+		description: "A tag with this name already exists on the board",
+	})
+	@ApiNotFoundResponse({ description: "Board not found" })
+	async createTag(
+		@Param("boardId") boardId: string,
+		@Body() dto: CreateTagDto
+	): Promise<TagResponse> {
+		const tag = await this.kanbanService.createTag(boardId, dto);
+		return TagResponse.from(tag);
+	}
+
+	@Put(":boardId/tags/:tagId")
+	@ApiOperation({ operationId: "updateTag" })
+	@ApiOkResponse({ type: TagResponse })
+	@ApiConflictResponse({
+		description: "A tag with this name already exists on the board",
+	})
+	@ApiNotFoundResponse({ description: "Board or tag not found" })
+	async updateTag(
+		@Param("boardId") boardId: string,
+		@Param("tagId", ParseIntPipe) tagId: number,
+		@Body() dto: UpdateTagDto
+	): Promise<TagResponse> {
+		const tag = await this.kanbanService.updateTag(boardId, tagId, dto);
+		return TagResponse.from(tag);
+	}
+
+	@Delete(":boardId/tags/:tagId")
+	@HttpCode(204)
+	@ApiOperation({ operationId: "deleteTag" })
+	@ApiNoContentResponse()
+	@ApiNotFoundResponse({ description: "Board or tag not found" })
+	async deleteTag(
+		@Param("boardId") boardId: string,
+		@Param("tagId", ParseIntPipe) tagId: number
+	): Promise<void> {
+		await this.kanbanService.deleteTag(boardId, tagId);
 	}
 
 	@Post(":boardId/columns/:columnId/tasks")
