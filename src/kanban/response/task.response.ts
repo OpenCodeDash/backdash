@@ -1,4 +1,5 @@
 import { ApiProperty, ApiSchema } from "@nestjs/swagger";
+import { Collection } from "@mikro-orm/core";
 import { TaskEntity } from "../entity/task.entity.js";
 import { ColumnEntity } from "../entity/column.entity.js";
 import { TagResponse } from "./tag.response.js";
@@ -86,6 +87,18 @@ export class TaskResponse {
 	})
 	tags: TagResponse[];
 
+	@ApiProperty({
+		type: [Number],
+		description: "Ids of tasks this task depends on (prerequisites)",
+	})
+	dependsOn: number[];
+
+	@ApiProperty({
+		type: [Number],
+		description: "Ids of tasks that depend on this task",
+	})
+	dependents: number[];
+
 	static from(task: TaskEntity): TaskResponse {
 		// Mutation paths populate tags; an uninitialised collection would be a
 		// bug here, so the empty fallback only guards relation loads we missed
@@ -95,6 +108,9 @@ export class TaskResponse {
 					.map((tag) => TagResponse.from(tag))
 					.sort((a, b) => a.name.localeCompare(b.name))
 			: [];
+
+		const dependsOn = dependencyIds(task.dependsOn);
+		const dependents = dependencyIds(task.dependents);
 
 		return {
 			id: task.id,
@@ -110,6 +126,19 @@ export class TaskResponse {
 			createdAt: task.createdAt.toISOString(),
 			updatedAt: task.updatedAt.toISOString(),
 			tags,
+			dependsOn,
+			dependents,
 		};
 	}
+}
+
+// Sorted dependency id list; an uninitialised relation degrades to an empty
+// list rather than throwing, matching the tags handling above.
+function dependencyIds(relation: Collection<TaskEntity>): number[] {
+	if (!relation.isInitialized()) return [];
+	return relation
+		.getItems()
+		.map((t) => t.id as number)
+		.filter((id): id is number => id !== undefined)
+		.sort((a, b) => a - b);
 }

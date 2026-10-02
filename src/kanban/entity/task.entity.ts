@@ -93,4 +93,13 @@ export class TaskEntity {
 	// Owning side of the task<->tag many-to-many
 	@ManyToMany(() => TagEntity, (tag) => tag.tasks, { owner: true })
 	tags = new Collection<TagEntity>(this);
+
+	// Tasks this task depends on (prerequisites that should be done first).
+	// Owning side of the task<->task many-to-many; `dependents` is the inverse
+	// (tasks that depend on this one). Both are scoped to the task's board.
+	@ManyToMany(() => TaskEntity, (task) => task.dependents, { owner: true })
+	dependsOn = new Collection<TaskEntity>(this);
+
+	@ManyToMany(() => TaskEntity, (task) => task.dependsOn)
+	dependents = new Collection<TaskEntity>(this);
 }
