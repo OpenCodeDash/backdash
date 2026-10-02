@@ -19,8 +19,8 @@ import { UpdateTaskDto } from "./dto/update-task.dto.js";
 import { CreateTagDto } from "./dto/create-tag.dto.js";
 import { UpdateTagDto } from "./dto/update-tag.dto.js";
 import { MoveTaskDto } from "./dto/move-task.dto.js";
-import { ClaimTaskDto } from "./dto/claim-task.dto.js";
 import {
+	ApiBearerAuth,
 	ApiConflictResponse,
 	ApiCreatedResponse,
 	ApiNoContentResponse,
@@ -34,7 +34,10 @@ import { ReorderColumnsDto } from "./dto/reorder-columns.dto.js";
 import { ColumnResponse } from "./response/column.response.js";
 import { TaskResponse } from "./response/task.response.js";
 import { TagResponse } from "./response/tag.response.js";
+import { CurrentUser } from "../auth/current-user.decorator.js";
+import type { AuthenticatedAccount } from "../auth/auth.types.js";
 
+@ApiBearerAuth()
 @Controller("kanban")
 export class KanbanController {
 	constructor(private readonly kanbanService: KanbanService) {}
@@ -44,8 +47,11 @@ export class KanbanController {
 	@ApiCreatedResponse({
 		type: BoardResponse,
 	})
-	async createBoard(@Body() dto: CreateBoardDto): Promise<BoardResponse> {
-		const board = await this.kanbanService.createBoard(dto.name);
+	async createBoard(
+		@Body() dto: CreateBoardDto,
+		@CurrentUser() current: AuthenticatedAccount
+	): Promise<BoardResponse> {
+		const board = await this.kanbanService.createBoard(dto.name, current.name);
 		return BoardResponse.from(board);
 	}
 
@@ -78,9 +84,14 @@ export class KanbanController {
 	@ApiNotFoundResponse({ description: "Board not found" })
 	async renameBoard(
 		@Param("id") id: string,
-		@Body() dto: RenameBoardDto
+		@Body() dto: RenameBoardDto,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<BoardResponse> {
-		const board = await this.kanbanService.renameBoard(id, dto.name);
+		const board = await this.kanbanService.renameBoard(
+			id,
+			dto.name,
+			current.name
+		);
 		return BoardResponse.from(board);
 	}
 
@@ -89,8 +100,11 @@ export class KanbanController {
 	@ApiOperation({ operationId: "deleteBoard" })
 	@ApiNoContentResponse()
 	@ApiNotFoundResponse({ description: "Board not found" })
-	async deleteBoard(@Param("id") id: string): Promise<void> {
-		await this.kanbanService.deleteBoard(id);
+	async deleteBoard(
+		@Param("id") id: string,
+		@CurrentUser() current: AuthenticatedAccount
+	): Promise<void> {
+		await this.kanbanService.deleteBoard(id, current.name);
 	}
 
 	@Put(":boardId/columns/order")
@@ -100,11 +114,13 @@ export class KanbanController {
 	})
 	async reorder(
 		@Param("boardId") boardId: string,
-		@Body() dto: ReorderColumnsDto
+		@Body() dto: ReorderColumnsDto,
+		@CurrentUser() current: AuthenticatedAccount
 	) {
 		const columns = await this.kanbanService.reorderColumns(
 			boardId,
-			dto.columnIds
+			dto.columnIds,
+			current.name
 		);
 
 		return columns.map((column) => ColumnResponse.from(column));
@@ -121,12 +137,14 @@ export class KanbanController {
 	@ApiNotFoundResponse({ description: "Board not found" })
 	async createColumn(
 		@Param("boardId") boardId: string,
-		@Body() dto: CreateColumnDto
+		@Body() dto: CreateColumnDto,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<ColumnResponse> {
 		const column = await this.kanbanService.createColumn(
 			boardId,
 			dto.name,
-			dto.isQueue
+			dto.isQueue,
+			current.name
 		);
 		return ColumnResponse.from(column);
 	}
@@ -143,12 +161,14 @@ export class KanbanController {
 	async updateColumn(
 		@Param("boardId") boardId: string,
 		@Param("columnId", ParseIntPipe) columnId: number,
-		@Body() dto: UpdateColumnDto
+		@Body() dto: UpdateColumnDto,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<ColumnResponse> {
 		const column = await this.kanbanService.updateColumn(
 			boardId,
 			columnId,
-			dto
+			dto,
+			current.name
 		);
 		return ColumnResponse.from(column);
 	}
@@ -160,9 +180,10 @@ export class KanbanController {
 	@ApiNotFoundResponse({ description: "Board or column not found" })
 	async deleteColumn(
 		@Param("boardId") boardId: string,
-		@Param("columnId", ParseIntPipe) columnId: number
+		@Param("columnId", ParseIntPipe) columnId: number,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<void> {
-		await this.kanbanService.deleteColumn(boardId, columnId);
+		await this.kanbanService.deleteColumn(boardId, columnId, current.name);
 	}
 
 	@Get(":boardId/tags")
@@ -185,9 +206,10 @@ export class KanbanController {
 	@ApiNotFoundResponse({ description: "Board not found" })
 	async createTag(
 		@Param("boardId") boardId: string,
-		@Body() dto: CreateTagDto
+		@Body() dto: CreateTagDto,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<TagResponse> {
-		const tag = await this.kanbanService.createTag(boardId, dto);
+		const tag = await this.kanbanService.createTag(boardId, dto, current.name);
 		return TagResponse.from(tag);
 	}
 
@@ -201,9 +223,15 @@ export class KanbanController {
 	async updateTag(
 		@Param("boardId") boardId: string,
 		@Param("tagId", ParseIntPipe) tagId: number,
-		@Body() dto: UpdateTagDto
+		@Body() dto: UpdateTagDto,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<TagResponse> {
-		const tag = await this.kanbanService.updateTag(boardId, tagId, dto);
+		const tag = await this.kanbanService.updateTag(
+			boardId,
+			tagId,
+			dto,
+			current.name
+		);
 		return TagResponse.from(tag);
 	}
 
@@ -214,9 +242,10 @@ export class KanbanController {
 	@ApiNotFoundResponse({ description: "Board or tag not found" })
 	async deleteTag(
 		@Param("boardId") boardId: string,
-		@Param("tagId", ParseIntPipe) tagId: number
+		@Param("tagId", ParseIntPipe) tagId: number,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<void> {
-		await this.kanbanService.deleteTag(boardId, tagId);
+		await this.kanbanService.deleteTag(boardId, tagId, current.name);
 	}
 
 	@Post(":boardId/columns/:columnId/tasks")
@@ -226,9 +255,15 @@ export class KanbanController {
 	async createTask(
 		@Param("boardId") boardId: string,
 		@Param("columnId", ParseIntPipe) columnId: number,
-		@Body() dto: CreateTaskDto
+		@Body() dto: CreateTaskDto,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<TaskResponse> {
-		const task = await this.kanbanService.createTask(boardId, columnId, dto);
+		const task = await this.kanbanService.createTask(
+			boardId,
+			columnId,
+			dto,
+			current.name
+		);
 		return TaskResponse.from(task);
 	}
 
@@ -240,13 +275,15 @@ export class KanbanController {
 		@Param("boardId") boardId: string,
 		@Param("columnId", ParseIntPipe) columnId: number,
 		@Param("taskId", ParseIntPipe) taskId: number,
-		@Body() dto: UpdateTaskDto
+		@Body() dto: UpdateTaskDto,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<TaskResponse> {
 		const task = await this.kanbanService.updateTask(
 			boardId,
 			columnId,
 			taskId,
-			dto
+			dto,
+			current.name
 		);
 		return TaskResponse.from(task);
 	}
@@ -259,9 +296,15 @@ export class KanbanController {
 	async deleteTask(
 		@Param("boardId") boardId: string,
 		@Param("columnId", ParseIntPipe) columnId: number,
-		@Param("taskId", ParseIntPipe) taskId: number
+		@Param("taskId", ParseIntPipe) taskId: number,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<void> {
-		await this.kanbanService.deleteTask(boardId, columnId, taskId);
+		await this.kanbanService.deleteTask(
+			boardId,
+			columnId,
+			taskId,
+			current.name
+		);
 	}
 
 	@Post(":boardId/tasks/:taskId/move")
@@ -272,15 +315,24 @@ export class KanbanController {
 	async moveTask(
 		@Param("boardId") boardId: string,
 		@Param("taskId", ParseIntPipe) taskId: number,
-		@Body() dto: MoveTaskDto
+		@Body() dto: MoveTaskDto,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<TaskResponse> {
-		const task = await this.kanbanService.moveTask(boardId, taskId, dto);
+		const task = await this.kanbanService.moveTask(
+			boardId,
+			taskId,
+			dto,
+			current.name
+		);
 		return TaskResponse.from(task);
 	}
 
 	@Post(":boardId/columns/:columnId/tasks/:taskId/claim")
 	@HttpCode(200)
-	@ApiOperation({ operationId: "claimTask" })
+	@ApiOperation({
+		operationId: "claimTask",
+		description: "Claims a queue task as the authenticated account",
+	})
 	@ApiOkResponse({ type: TaskResponse })
 	@ApiNotFoundResponse({ description: "Board or task not found" })
 	@ApiConflictResponse({ description: "The task is already claimed" })
@@ -288,13 +340,13 @@ export class KanbanController {
 		@Param("boardId") boardId: string,
 		@Param("columnId", ParseIntPipe) columnId: number,
 		@Param("taskId", ParseIntPipe) taskId: number,
-		@Body() dto: ClaimTaskDto
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<TaskResponse> {
 		const task = await this.kanbanService.claimTask(
 			boardId,
 			columnId,
 			taskId,
-			dto.actor
+			current.name
 		);
 		return TaskResponse.from(task);
 	}
@@ -308,9 +360,15 @@ export class KanbanController {
 	async releaseTask(
 		@Param("boardId") boardId: string,
 		@Param("columnId", ParseIntPipe) columnId: number,
-		@Param("taskId", ParseIntPipe) taskId: number
+		@Param("taskId", ParseIntPipe) taskId: number,
+		@CurrentUser() current: AuthenticatedAccount
 	): Promise<TaskResponse> {
-		const task = await this.kanbanService.releaseTask(boardId, columnId, taskId);
+		const task = await this.kanbanService.releaseTask(
+			boardId,
+			columnId,
+			taskId,
+			current.name
+		);
 		return TaskResponse.from(task);
 	}
 }

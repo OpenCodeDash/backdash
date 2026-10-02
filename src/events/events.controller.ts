@@ -8,6 +8,7 @@ import {
 	Sse,
 } from "@nestjs/common";
 import {
+	ApiBearerAuth,
 	ApiNotFoundResponse,
 	ApiOkResponse,
 	ApiOperation,
@@ -29,6 +30,7 @@ const STREAM_NOTES =
 	"ignore it) and `resync` (history was pruned; refetch full state).";
 
 @ApiTags("events")
+@ApiBearerAuth()
 @Controller()
 export class EventsController {
 	constructor(

@@ -33,8 +33,10 @@ import { CreateTagDto } from "./dto/create-tag.dto.js";
 import { UpdateTagDto } from "./dto/update-tag.dto.js";
 import { MoveTaskDto } from "./dto/move-task.dto.js";
 
-// All mutations originate from the dashboard UI until agents exist
-const ACTOR = "dashboard";
+// Fallback actor for callers that do not supply an authenticated identity.
+// Every HTTP request path supplies one, so this is only a safety net (used by
+// direct service tests).
+const DEFAULT_ACTOR = "dashboard";
 
 @Injectable()
 export class KanbanService {
@@ -49,13 +51,17 @@ export class KanbanService {
 		private readonly events: EventsService
 	) {}
 
-	async createBoard(name: string): Promise<BoardEntity> {
+	async createBoard(
+		name: string,
+		actor: string = DEFAULT_ACTOR
+	): Promise<BoardEntity> {
 		const board = await this.boardsRepo.newBoard(name);
 
 		await this.recordEvent(
 			board,
 			EventType.BoardCreated,
-			{ ...BoardResponse.from(board) }
+			{ ...BoardResponse.from(board) },
+			actor
 		);
 
 		return board;
@@ -77,7 +83,11 @@ export class KanbanService {
 		});
 	}
 
-	async renameBoard(id: string, name: string): Promise<BoardEntity> {
+	async renameBoard(
+		id: string,
+		name: string,
+		actor: string = DEFAULT_ACTOR
+	): Promise<BoardEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, id);
 
@@ -85,7 +95,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.BoardUpdated,
-			ACTOR,
+			actor,
 			{ ...BoardResponse.from(board) }
 		);
 
@@ -95,7 +105,7 @@ export class KanbanService {
 		return board;
 	}
 
-	async deleteBoard(id: string): Promise<void> {
+	async deleteBoard(id: string, actor: string = DEFAULT_ACTOR): Promise<void> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, id);
 		const boardId = board.id;
@@ -104,7 +114,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.BoardDeleted,
-			ACTOR,
+			actor,
 			{ id: boardId, name }
 		);
 
@@ -117,7 +127,7 @@ export class KanbanService {
 				seq: event.seq as number,
 				boardId,
 				type: EventType.BoardDeleted,
-				actor: ACTOR,
+				actor,
 				payload: { id: boardId, name },
 				createdAt: (event.createdAt ?? new Date()).toISOString(),
 			},
@@ -127,7 +137,8 @@ export class KanbanService {
 	async createColumn(
 		boardId: string,
 		name: string,
-		isQueue = false
+		isQueue = false,
+		actor: string = DEFAULT_ACTOR
 	): Promise<ColumnEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
@@ -135,7 +146,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.ColumnAdded,
-			ACTOR
+			actor
 		);
 		let column: ColumnEntity;
 
@@ -170,7 +181,8 @@ export class KanbanService {
 	async updateColumn(
 		boardId: string,
 		columnId: number,
-		dto: UpdateColumnDto
+		dto: UpdateColumnDto,
+		actor: string = DEFAULT_ACTOR
 	): Promise<ColumnEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
@@ -195,7 +207,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.ColumnUpdated,
-			ACTOR,
+			actor,
 			{ ...ColumnResponse.from(column) }
 		);
 
@@ -216,7 +228,11 @@ export class KanbanService {
 		return column;
 	}
 
-	async deleteColumn(boardId: string, columnId: number): Promise<void> {
+	async deleteColumn(
+		boardId: string,
+		columnId: number,
+		actor: string = DEFAULT_ACTOR
+	): Promise<void> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
 		const column = await this.loadColumn(em, boardId, columnId);
@@ -224,7 +240,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.ColumnDeleted,
-			ACTOR,
+			actor,
 			{ id: column.id, name: column.name }
 		);
 
@@ -240,14 +256,18 @@ export class KanbanService {
 		return this.tagsRepo.findByBoard(boardId);
 	}
 
-	async createTag(boardId: string, dto: CreateTagDto): Promise<TagEntity> {
+	async createTag(
+		boardId: string,
+		dto: CreateTagDto,
+		actor: string = DEFAULT_ACTOR
+	): Promise<TagEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
 
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.TagAdded,
-			ACTOR
+			actor
 		);
 		let tag: TagEntity;
 
@@ -283,7 +303,8 @@ export class KanbanService {
 	async updateTag(
 		boardId: string,
 		tagId: number,
-		dto: UpdateTagDto
+		dto: UpdateTagDto,
+		actor: string = DEFAULT_ACTOR
 	): Promise<TagEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
@@ -319,7 +340,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.TagUpdated,
-			ACTOR,
+			actor,
 			{ ...TagResponse.from(tag) }
 		);
 
@@ -329,7 +350,11 @@ export class KanbanService {
 		return tag;
 	}
 
-	async deleteTag(boardId: string, tagId: number): Promise<void> {
+	async deleteTag(
+		boardId: string,
+		tagId: number,
+		actor: string = DEFAULT_ACTOR
+	): Promise<void> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
 		const tag = await this.loadTag(em, boardId, tagId);
@@ -337,7 +362,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.TagDeleted,
-			ACTOR,
+			actor,
 			{ id: tag.id, name: tag.name }
 		);
 
@@ -345,7 +370,11 @@ export class KanbanService {
 		this.events.publish([EventResponse.from(event)]);
 	}
 
-	async reorderColumns(boardId: string, columnIds: number[]) {
+	async reorderColumns(
+		boardId: string,
+		columnIds: number[],
+		actor: string = DEFAULT_ACTOR
+	) {
 		if (!(await this.boardExists(boardId))) {
 			throw new NotFoundException(`Board '${boardId}' not found`);
 		}
@@ -369,7 +398,8 @@ export class KanbanService {
 		await this.recordEvent(
 			board,
 			EventType.ColumnReordered,
-			{ columns: columns.map((column) => ColumnResponse.from(column)) }
+			{ columns: columns.map((column) => ColumnResponse.from(column)) },
+			actor
 		);
 
 		return columns;
@@ -378,7 +408,8 @@ export class KanbanService {
 	async createTask(
 		boardId: string,
 		columnId: number,
-		dto: CreateTaskDto
+		dto: CreateTaskDto,
+		actor: string = DEFAULT_ACTOR
 	): Promise<TaskEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
@@ -388,7 +419,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.TaskCreated,
-			ACTOR
+			actor
 		);
 		const task = em.create(TaskEntity, {
 			column,
@@ -417,7 +448,8 @@ export class KanbanService {
 		boardId: string,
 		columnId: number,
 		taskId: number,
-		dto: UpdateTaskDto
+		dto: UpdateTaskDto,
+		actor: string = DEFAULT_ACTOR
 	): Promise<TaskEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
@@ -452,7 +484,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.TaskUpdated,
-			ACTOR,
+			actor,
 			{ ...TaskResponse.from(task) }
 		);
 
@@ -465,7 +497,8 @@ export class KanbanService {
 	async deleteTask(
 		boardId: string,
 		columnId: number,
-		taskId: number
+		taskId: number,
+		actor: string = DEFAULT_ACTOR
 	): Promise<void> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
@@ -474,7 +507,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.TaskDeleted,
-			ACTOR,
+			actor,
 			{ id: task.id, name: task.name, columnId }
 		);
 
@@ -488,7 +521,8 @@ export class KanbanService {
 	async moveTask(
 		boardId: string,
 		taskId: number,
-		dto: MoveTaskDto
+		dto: MoveTaskDto,
+		actor: string = DEFAULT_ACTOR
 	): Promise<TaskEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
@@ -522,7 +556,7 @@ export class KanbanService {
 		// Flush first so onUpdate refreshes task.updatedAt before the payload
 		await em.flush();
 
-		const event = this.eventsRepo(em).append(board, EventType.TaskMoved, ACTOR, {
+		const event = this.eventsRepo(em).append(board, EventType.TaskMoved, actor, {
 			...TaskResponse.from(task),
 		});
 
@@ -536,7 +570,7 @@ export class KanbanService {
 		boardId: string,
 		columnId: number,
 		taskId: number,
-		actor?: string
+		actor: string = DEFAULT_ACTOR
 	): Promise<TaskEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
@@ -552,15 +586,14 @@ export class KanbanService {
 			throw new ConflictException(`Task '${taskId}' is already claimed`);
 		}
 
-		const claimer = actor ?? ACTOR;
-		task.claimedBy = claimer;
+		task.claimedBy = actor;
 
 		await em.flush();
 
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.TaskClaimed,
-			claimer,
+			actor,
 			{ ...TaskResponse.from(task) }
 		);
 
@@ -573,7 +606,8 @@ export class KanbanService {
 	async releaseTask(
 		boardId: string,
 		columnId: number,
-		taskId: number
+		taskId: number,
+		actor: string = DEFAULT_ACTOR
 	): Promise<TaskEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
@@ -590,7 +624,7 @@ export class KanbanService {
 		const event = this.eventsRepo(em).append(
 			board,
 			EventType.TaskReleased,
-			ACTOR,
+			actor,
 			{ ...TaskResponse.from(task) }
 		);
 
@@ -611,10 +645,11 @@ export class KanbanService {
 	private async recordEvent(
 		board: BoardEntity,
 		type: EventType,
-		payload: Record<string, unknown>
+		payload: Record<string, unknown>,
+		actor: string = DEFAULT_ACTOR
 	): Promise<void> {
 		const em = this.em.fork();
-		const event = this.eventsRepo(em).append(board, type, ACTOR, payload);
+		const event = this.eventsRepo(em).append(board, type, actor, payload);
 
 		await em.flush();
 		this.events.publish([EventResponse.from(event)]);

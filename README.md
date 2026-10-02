@@ -73,6 +73,35 @@ $ npm run migration:down
 $ npm run migration:list
 ```
 
+## Authentication
+
+Every route except `GET /` (health), `POST /auth/register`, `POST /auth/login`
+and the Swagger docs requires a bearer token:
+
+```http
+Authorization: Bearer <token>
+```
+
+The **first** account to register becomes the admin; registration then closes.
+Admins provision every later account:
+
+- `POST /auth/users` — create a user (optionally an admin)
+- `POST /auth/service` — create a service account for an agent/tool
+- `GET /auth/service` / `DELETE /auth/service/:id` — list / revoke service accounts
+
+Tokens are stored only as salted scrypt hashes: the plaintext token is returned
+once and is not retrievable again. Logging in rotates the account's token.
+Kanban events and task claims use the authenticated account name as the actor;
+a service account claims tasks as its own name.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `3000` | Listen port |
+| `BACKDASH_HOST` | `127.0.0.1` | Bind address; set `0.0.0.0` to expose it |
+| `DATABASE_PATH` | `./app.sqlite` | SQLite file |
+
+`POST /auth/register` and `POST /auth/login` are rate limited per client IP.
+
 ## Run tests
 
 ```bash

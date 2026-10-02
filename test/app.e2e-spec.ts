@@ -1,5 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { type INestApplication, ValidationPipe } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
 import { MikroORM } from "@mikro-orm/core";
 import { MikroOrmModule } from "@mikro-orm/nestjs";
 import http from "node:http";
@@ -8,11 +9,16 @@ import { AppController } from "#/app.controller";
 import { AppService } from "#/app.service";
 import { KanbanModule } from "#/kanban/kanban.module";
 import { EventsModule } from "#/events/events.module";
+import { AuthModule } from "#/auth/auth.module";
+import { AuthGuard } from "#/auth/auth.guard";
 import { BoardEntity } from "#/kanban/entity/board.entity";
 import { EventEntity } from "#/events/entity/event.entity";
 import { EventRepository } from "#/events/repository/event.repository";
 import { EventType } from "#/events/enum/event-type.enum";
 import { testConfig } from "./mikro-orm.test-helper.js";
+
+const ACCOUNT_NAME = "e2e";
+const ACCOUNT_PASSWORD = "e2e-password";
 
 // Full-stack e2e: a real Nest application (routing, ValidationPipe, DI, the
 // MikroORM request-context middleware, and an in-memory SQLite) driven over
@@ -23,18 +29,34 @@ import { testConfig } from "./mikro-orm.test-helper.js";
 describe("backdash (e2e)", () => {
 	let app: INestApplication;
 	let orm: MikroORM;
-	let api: ReturnType<typeof request>;
 	let port: number;
+	let token = "";
+
+	// Unauthenticated client used by the auth tests; every other test goes
+	// through `api`, which attaches the bearer token obtained in beforeAll.
+	const raw = () => request(`http://127.0.0.1:${port}`);
+
+	const api = {
+		get: (path: string) =>
+			raw().get(path).set("Authorization", `Bearer ${token}`),
+		post: (path: string) =>
+			raw().post(path).set("Authorization", `Bearer ${token}`),
+		put: (path: string) =>
+			raw().put(path).set("Authorization", `Bearer ${token}`),
+		delete: (path: string) =>
+			raw().delete(path).set("Authorization", `Bearer ${token}`),
+	};
 
 	beforeAll(async () => {
 		const moduleFixture = await Test.createTestingModule({
 			imports: [
 				MikroOrmModule.forRoot(testConfig()),
+				AuthModule,
 				KanbanModule,
 				EventsModule,
 			],
 			controllers: [AppController],
-			providers: [AppService],
+			providers: [AppService, { provide: APP_GUARD, useClass: AuthGuard }],
 		}).compile();
 
 		orm = moduleFixture.get(MikroORM);
@@ -47,7 +69,13 @@ describe("backdash (e2e)", () => {
 		await app.listen(0);
 
 		port = (app.getHttpServer().address() as { port: number }).port;
-		api = request(`http://127.0.0.1:${port}`);
+
+		// Register the shared identity that the bulk of the suite acts as.
+		const registered = await raw()
+			.post("/auth/register")
+			.send({ name: ACCOUNT_NAME, password: ACCOUNT_PASSWORD })
+			.expect(201);
+		token = registered.body.token;
 	});
 
 	afterAll(async () => {
@@ -62,6 +90,184 @@ describe("backdash (e2e)", () => {
 
 	it("GET / returns Hello World!", () =>
 		api.get("/").expect(200).expect("Hello World!"));
+
+	it("closes registration once the first (admin) account exists", () =>
+		raw()
+			.post("/auth/register")
+			.send({ name: "late-signup", password: "password123" })
+			.expect(403));
+
+	it("admin provisions a user who can then log in", async () => {
+		const created = await api
+			.post("/auth/users")
+			.send({ name: "reg-basic", password: "password123" })
+			.expect(201);
+
+		expect(created.body.account.name).toBe("reg-basic");
+		expect(created.body.account.kind).toBe("user");
+		expect(created.body.account.isAdmin).toBe(false);
+		expect(created.body.token).toMatch(/^bdsk_/);
+
+		const login = await raw()
+			.post("/auth/login")
+			.send({ name: "reg-basic", password: "password123" })
+			.expect(200);
+		expect(login.body.token).toMatch(/^bdsk_/);
+	});
+
+	it("POST /auth/users rejects a duplicate name with 409", async () => {
+		await api
+			.post("/auth/users")
+			.send({ name: "user-dup", password: "password123" })
+			.expect(201);
+		await api
+			.post("/auth/users")
+			.send({ name: "user-dup", password: "password456" })
+			.expect(409);
+	});
+
+	it("POST /auth/users rejects a short password with 400", () =>
+		api
+			.post("/auth/users")
+			.send({ name: "user-short", password: "short" })
+			.expect(400));
+
+	it("POST /auth/login rejects a bad password with 401", async () => {
+		await api
+			.post("/auth/users")
+			.send({ name: "log-bad", password: "password123" })
+			.expect(201);
+
+		await raw()
+			.post("/auth/login")
+			.send({ name: "log-bad", password: "wrong-password" })
+			.expect(401);
+	});
+
+	it("GET /auth/me returns the authenticated admin account", async () => {
+		const res = await api.get("/auth/me").expect(200);
+		expect(res.body.name).toBe(ACCOUNT_NAME);
+		expect(res.body.kind).toBe("user");
+		expect(res.body.isAdmin).toBe(true);
+	});
+
+	it("a non-admin cannot provision users or service accounts", async () => {
+		const user = await api
+			.post("/auth/users")
+			.send({ name: "pleb", password: "password123" })
+			.expect(201);
+		const asUser = (path: string) =>
+			raw().post(path).set("Authorization", `Bearer ${user.body.token}`);
+
+		await asUser("/auth/users")
+			.send({ name: "nope", password: "password123" })
+			.expect(403);
+		await asUser("/auth/service")
+			.send({ name: "nope-svc" })
+			.expect(403);
+	});
+
+	it("protected routes reject a missing token with 401", () =>
+		raw().get("/kanban").expect(401));
+
+	it("protected routes reject an invalid token with 401", () =>
+		raw().get("/kanban").set("Authorization", "Bearer not-a-token").expect(401));
+
+	it("GET /events rejects a missing token with 401", () =>
+		raw().get("/events").expect(401));
+
+	it("POST /auth/service creates a service account", async () => {
+		const res = await api
+			.post("/auth/service")
+			.send({ name: "svc-agent" })
+			.expect(201);
+
+		expect(res.body.account.kind).toBe("service");
+		expect(res.body.token).toMatch(/^bdsk_/);
+	});
+
+	it("POST /auth/service rejects a duplicate name with 409", async () => {
+		await api.post("/auth/service").send({ name: "svc-dup" }).expect(201);
+		await api.post("/auth/service").send({ name: "svc-dup" }).expect(409);
+	});
+
+	it("GET /auth/service lists only service accounts", async () => {
+		await api.post("/auth/service").send({ name: "svc-list" }).expect(201);
+
+		const res = await api.get("/auth/service").expect(200);
+
+		expect(res.body.map((account: { name: string }) => account.name)).toContain(
+			"svc-list"
+		);
+		expect(
+			res.body.every(
+				(account: { kind: string }) => account.kind === "service"
+			)
+		).toBe(true);
+	});
+
+	it("a service account claims tasks as its own name", async () => {
+		const svc = await api
+			.post("/auth/service")
+			.send({ name: "svc-worker" })
+			.expect(201);
+		const created = await createBoard("SvcClaim");
+		const [todo] = created.columns;
+		const task = await api
+			.post(`/kanban/${created.id}/columns/${todo.id}/tasks`)
+			.send({ name: "Work" })
+			.expect(201);
+
+		const claimed = await raw()
+			.post(
+				`/kanban/${created.id}/columns/${todo.id}/tasks/${task.body.id}/claim`
+			)
+			.set("Authorization", `Bearer ${svc.body.token}`)
+			.send({})
+			.expect(200);
+
+		expect(claimed.body.claimedBy).toBe("svc-worker");
+	});
+
+	it("DELETE /auth/service/:id revokes the account and its token", async () => {
+		const svc = await api
+			.post("/auth/service")
+			.send({ name: "svc-gone" })
+			.expect(201);
+
+		await api.delete(`/auth/service/${svc.body.account.id}`).expect(204);
+		await raw()
+			.get("/auth/me")
+			.set("Authorization", `Bearer ${svc.body.token}`)
+			.expect(401);
+	});
+
+	it("service accounts cannot manage other service accounts", async () => {
+		const svc = await api
+			.post("/auth/service")
+			.send({ name: "svc-nopower" })
+			.expect(201);
+
+		await raw()
+			.post("/auth/service")
+			.set("Authorization", `Bearer ${svc.body.token}`)
+			.send({ name: "svc-child" })
+			.expect(403);
+	});
+
+	it("rate limits repeated login attempts with 429", async () => {
+		let sawTooMany = false;
+		for (let attempt = 0; attempt < 15; attempt += 1) {
+			const res = await raw()
+				.post("/auth/login")
+				.send({ name: "ghost", password: "nope" });
+			if (res.status === 429) {
+				sawTooMany = true;
+				break;
+			}
+		}
+		expect(sawTooMany).toBe(true);
+	});
 
 	it("POST /kanban creates a board with the default columns", async () => {
 		const board = await createBoard("Order");
@@ -389,7 +595,7 @@ describe("backdash (e2e)", () => {
 		).toEqual(["B", "A"]);
 	});
 
-	it("POST claim marks a queue task and records the actor", async () => {
+	it("POST claim marks a queue task as the authenticated account", async () => {
 		const created = await createBoard("TaskClaim");
 		const [todo] = created.columns;
 		const createdTask = await api
@@ -399,10 +605,10 @@ describe("backdash (e2e)", () => {
 
 		const res = await api
 			.post(`/kanban/${created.id}/columns/${todo.id}/tasks/${createdTask.body.id}/claim`)
-			.send({ actor: "agent-1" })
+			.send({})
 			.expect(200);
 
-		expect(res.body.claimedBy).toBe("agent-1");
+		expect(res.body.claimedBy).toBe(ACCOUNT_NAME);
 	});
 
 	it("POST claim rejects a non-queue column with 400", async () => {
@@ -430,11 +636,11 @@ describe("backdash (e2e)", () => {
 
 		await api
 			.post(`/kanban/${created.id}/columns/${todo.id}/tasks/${id}/claim`)
-			.send({ actor: "a" })
+			.send({})
 			.expect(200);
 		await api
 			.post(`/kanban/${created.id}/columns/${todo.id}/tasks/${id}/claim`)
-			.send({ actor: "b" })
+			.send({})
 			.expect(409);
 	});
 
@@ -449,7 +655,7 @@ describe("backdash (e2e)", () => {
 
 		await api
 			.post(`/kanban/${created.id}/columns/${todo.id}/tasks/${id}/claim`)
-			.send({ actor: "a" })
+			.send({})
 			.expect(200);
 		const res = await api
 			.post(`/kanban/${created.id}/columns/${todo.id}/tasks/${id}/release`)
@@ -493,6 +699,7 @@ describe("backdash (e2e)", () => {
 						host: "127.0.0.1",
 						port,
 						path: `/events?lastEventId=${latest!.seq}`,
+						headers: { Authorization: `Bearer ${token}` },
 					},
 					(res) => {
 						expect(res.statusCode).toBe(200);
@@ -553,7 +760,12 @@ describe("backdash (e2e)", () => {
 		// then close the connection.
 		const body = await new Promise<string>((resolve, reject) => {
 			const req = http.get(
-				{ host: "127.0.0.1", port, path: "/events?lastEventId=0" },
+				{
+					host: "127.0.0.1",
+					port,
+					path: "/events?lastEventId=0",
+					headers: { Authorization: `Bearer ${token}` },
+				},
 				(res) => {
 					expect(res.statusCode).toBe(200);
 					expect(res.headers["content-type"]).toContain("text/event-stream");

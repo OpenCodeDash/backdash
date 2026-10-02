@@ -27,6 +27,11 @@ async function bootstrap() {
 		res.json(document);
 	});
 
-	await app.listen(process.env.PORT ?? 3000);
+	// Loopback by default so the API is not reachable from the LAN. Set
+	// BACKDASH_HOST=0.0.0.0 to expose it deliberately (e.g. a container/proxy).
+	await app.listen(
+		process.env.PORT ?? 3000,
+		process.env.BACKDASH_HOST ?? "127.0.0.1"
+	);
 }
 await bootstrap();
