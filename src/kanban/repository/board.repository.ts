@@ -61,7 +61,7 @@ export class BoardRepository extends EntityRepository<BoardEntity> {
 	findWithColumns(id: string): Promise<BoardEntity> {
 		return this.findOneOrFail(
 			{ id },
-			{ populate: ["columns", "columns.tasks"] }
+			{ populate: ["columns", "columns.tasks", "columns.tasks.tags", "tags"] }
 		);
 	}
 

@@ -12,4 +12,7 @@ export enum EventType {
 	TaskMoved = "task.moved",
 	TaskReleased = "task.released",
 	TaskDeleted = "task.deleted",
+	TagAdded = "tag.added",
+	TagUpdated = "tag.updated",
+	TagDeleted = "tag.deleted",
 }

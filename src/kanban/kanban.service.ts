@@ -15,6 +15,8 @@ import { BoardRepository } from "./repository/board.repository.js";
 import { ColumnEntity } from "./entity/column.entity.js";
 import { ColumnRepository } from "./repository/column.repository.js";
 import { TaskEntity } from "./entity/task.entity.js";
+import { TagEntity } from "./entity/tag.entity.js";
+import { TagRepository } from "./repository/tag.repository.js";
 import { EventsService } from "../events/events.service.js";
 import { EventEntity } from "../events/entity/event.entity.js";
 import { EventRepository } from "../events/repository/event.repository.js";
@@ -23,9 +25,12 @@ import { EventResponse } from "../events/response/event.response.js";
 import { BoardResponse } from "./response/board-detail.response.js";
 import { ColumnResponse } from "./response/column.response.js";
 import { TaskResponse } from "./response/task.response.js";
+import { TagResponse } from "./response/tag.response.js";
 import { UpdateColumnDto } from "./dto/update-column.dto.js";
 import { CreateTaskDto } from "./dto/create-task.dto.js";
 import { UpdateTaskDto } from "./dto/update-task.dto.js";
+import { CreateTagDto } from "./dto/create-tag.dto.js";
+import { UpdateTagDto } from "./dto/update-tag.dto.js";
 import { MoveTaskDto } from "./dto/move-task.dto.js";
 
 // All mutations originate from the dashboard UI until agents exist
@@ -39,6 +44,8 @@ export class KanbanService {
 		private readonly boardsRepo: BoardRepository,
 		@InjectRepository(ColumnEntity)
 		private readonly columnsRepo: ColumnRepository,
+		@InjectRepository(TagEntity)
+		private readonly tagsRepo: TagRepository,
 		private readonly events: EventsService
 	) {}
 
@@ -167,10 +174,10 @@ export class KanbanService {
 	): Promise<ColumnEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
-		// Load with tasks populated so the response (and the column.updated
-		// event payload) carry the column's tasks; otherwise they degrade to
-		// [] and the client's column patch would wipe them
-		const column = await this.loadColumn(em, boardId, columnId, ["tasks"]);
+		// Load with tasks (and their tags) populated so the response and the
+		// column.updated event payload do not degrade to [] and wipe the
+		// client's column/task state
+		const column = await this.loadColumn(em, boardId, columnId, true);
 
 		if (dto.name !== undefined) {
 			column.name = dto.name;
@@ -225,6 +232,119 @@ export class KanbanService {
 		this.events.publish([EventResponse.from(event)]);
 	}
 
+	async listTags(boardId: string): Promise<TagEntity[]> {
+		if (!(await this.boardExists(boardId))) {
+			throw new NotFoundException(`Board '${boardId}' not found`);
+		}
+
+		return this.tagsRepo.findByBoard(boardId);
+	}
+
+	async createTag(boardId: string, dto: CreateTagDto): Promise<TagEntity> {
+		const em = this.em.fork();
+		const board = await this.loadBoard(em, boardId);
+
+		const event = this.eventsRepo(em).append(
+			board,
+			EventType.TagAdded,
+			ACTOR
+		);
+		let tag: TagEntity;
+
+		try {
+			tag = em.create(TagEntity, {
+				board,
+				name: dto.name,
+				description: normalizeOptionalText(dto.description),
+				prompt: normalizeOptionalText(dto.prompt),
+				color: normalizeOptionalText(dto.color),
+			});
+
+			// tag.id only exists after the first flush, so the payload is
+			// filled in a second one, mirroring createColumn
+			await em.persist(tag).flush();
+			event.payload = { ...TagResponse.from(tag) };
+			await em.flush();
+		} catch (error) {
+			if (error instanceof UniqueConstraintViolationException) {
+				throw new ConflictException(
+					`A tag named '${dto.name}' already exists on this board`
+				);
+			}
+
+			throw error;
+		}
+
+		this.events.publish([EventResponse.from(event)]);
+
+		return tag;
+	}
+
+	async updateTag(
+		boardId: string,
+		tagId: number,
+		dto: UpdateTagDto
+	): Promise<TagEntity> {
+		const em = this.em.fork();
+		const board = await this.loadBoard(em, boardId);
+		const tag = await this.loadTag(em, boardId, tagId);
+
+		if (dto.name !== undefined) {
+			tag.name = dto.name;
+		}
+		if (dto.description !== undefined) {
+			tag.description = normalizeOptionalText(dto.description);
+		}
+		if (dto.prompt !== undefined) {
+			tag.prompt = normalizeOptionalText(dto.prompt);
+		}
+		if (dto.color !== undefined) {
+			tag.color = normalizeOptionalText(dto.color);
+		}
+
+		try {
+			// Flush the tag change first so a duplicate name is caught and the
+			// onUpdate timestamp is fresh before the event payload is built
+			await em.flush();
+		} catch (error) {
+			if (error instanceof UniqueConstraintViolationException) {
+				throw new ConflictException(
+					`A tag named '${dto.name}' already exists on this board`
+				);
+			}
+
+			throw error;
+		}
+
+		const event = this.eventsRepo(em).append(
+			board,
+			EventType.TagUpdated,
+			ACTOR,
+			{ ...TagResponse.from(tag) }
+		);
+
+		await em.flush();
+		this.events.publish([EventResponse.from(event)]);
+
+		return tag;
+	}
+
+	async deleteTag(boardId: string, tagId: number): Promise<void> {
+		const em = this.em.fork();
+		const board = await this.loadBoard(em, boardId);
+		const tag = await this.loadTag(em, boardId, tagId);
+
+		const event = this.eventsRepo(em).append(
+			board,
+			EventType.TagDeleted,
+			ACTOR,
+			{ id: tag.id, name: tag.name }
+		);
+
+		await em.remove(tag).flush();
+		this.events.publish([EventResponse.from(event)]);
+	}
+
 	async reorderColumns(boardId: string, columnIds: number[]) {
 		if (!(await this.boardExists(boardId))) {
 			throw new NotFoundException(`Board '${boardId}' not found`);
@@ -263,6 +383,7 @@ export class KanbanService {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
 		const column = await this.loadColumn(em, boardId, columnId);
+		const tags = await this.resolveTags(em, boardId, dto.tagIds);
 
 		const event = this.eventsRepo(em).append(
 			board,
@@ -274,7 +395,12 @@ export class KanbanService {
 			name: dto.name,
 			description: dto.description ?? "",
 			position: await this.nextTaskPosition(em, columnId),
+			priority: dto.priority ?? null,
+			estimate: dto.estimate ?? null,
+			assignee: normalizeOptionalText(dto.assignee),
+			dueAt: parseDueAt(dto.dueAt),
 		});
+		task.tags.set(tags);
 
 		// task.id only exists after the first flush, so the payload is filled
 		// in a second one, mirroring createColumn
@@ -295,7 +421,7 @@ export class KanbanService {
 	): Promise<TaskEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
-		const task = await this.loadTaskInColumn(em, columnId, taskId);
+		const task = await this.loadTaskInColumn(em, columnId, taskId, true);
 
 		if (dto.name !== undefined) {
 			task.name = dto.name;
@@ -303,6 +429,25 @@ export class KanbanService {
 		if (dto.description !== undefined) {
 			task.description = dto.description;
 		}
+		if (dto.priority !== undefined) {
+			task.priority = dto.priority;
+		}
+		if (dto.estimate !== undefined) {
+			task.estimate = dto.estimate;
+		}
+		if (dto.assignee !== undefined) {
+			task.assignee = normalizeOptionalText(dto.assignee);
+		}
+		if (dto.dueAt !== undefined) {
+			task.dueAt = parseDueAt(dto.dueAt);
+		}
+		if (dto.tagIds !== undefined) {
+			task.tags.set(await this.resolveTags(em, boardId, dto.tagIds));
+		}
+
+		// Flush before building the payload so onUpdate has refreshed
+		// task.updatedAt, then persist the event in a second flush
+		await em.flush();
 
 		const event = this.eventsRepo(em).append(
 			board,
@@ -347,7 +492,7 @@ export class KanbanService {
 	): Promise<TaskEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
-		const task = await this.loadTask(em, boardId, taskId);
+		const task = await this.loadTask(em, boardId, taskId, true);
 		const targetColumn = await this.loadColumn(em, boardId, dto.columnId);
 		const sourceColumnId = (task.column as ColumnEntity).id as number;
 
@@ -374,6 +519,9 @@ export class KanbanService {
 			candidate.position = position;
 		}
 
+		// Flush first so onUpdate refreshes task.updatedAt before the payload
+		await em.flush();
+
 		const event = this.eventsRepo(em).append(board, EventType.TaskMoved, ACTOR, {
 			...TaskResponse.from(task),
 		});
@@ -393,7 +541,7 @@ export class KanbanService {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
 		const column = await this.loadColumn(em, boardId, columnId);
-		const task = await this.loadTaskInColumn(em, columnId, taskId);
+		const task = await this.loadTaskInColumn(em, columnId, taskId, true);
 
 		if (!column.isQueue) {
 			throw new BadRequestException(
@@ -406,6 +554,8 @@ export class KanbanService {
 
 		const claimer = actor ?? ACTOR;
 		task.claimedBy = claimer;
+
+		await em.flush();
 
 		const event = this.eventsRepo(em).append(
 			board,
@@ -427,13 +577,15 @@ export class KanbanService {
 	): Promise<TaskEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
-		const task = await this.loadTaskInColumn(em, columnId, taskId);
+		const task = await this.loadTaskInColumn(em, columnId, taskId, true);
 
 		if (!task.claimedBy) {
 			throw new ConflictException(`Task '${taskId}' is not claimed`);
 		}
 
 		task.claimedBy = "";
+
+		await em.flush();
 
 		const event = this.eventsRepo(em).append(
 			board,
@@ -491,13 +643,15 @@ export class KanbanService {
 		em: EntityManager,
 		boardId: string,
 		columnId: number,
-		populate?: (keyof ColumnEntity)[]
+		includeTasks = false
 	): Promise<ColumnEntity> {
-		const column = await em.findOne(
-			ColumnEntity,
-			{ id: columnId, board: boardId },
-			populate ? { populate } : undefined
-		);
+		const column = includeTasks
+			? await em.findOne(
+					ColumnEntity,
+					{ id: columnId, board: boardId },
+					{ populate: ["tasks", "tasks.tags"] }
+				)
+			: await em.findOne(ColumnEntity, { id: columnId, board: boardId });
 
 		if (!column) {
 			throw new NotFoundException(
@@ -545,9 +699,16 @@ export class KanbanService {
 	private async loadTaskInColumn(
 		em: EntityManager,
 		columnId: number,
-		taskId: number
+		taskId: number,
+		includeTags = false
 	): Promise<TaskEntity> {
-		const task = await em.findOne(TaskEntity, { id: taskId, column: columnId });
+		const task = includeTags
+			? await em.findOne(
+					TaskEntity,
+					{ id: taskId, column: columnId },
+					{ populate: ["tags"] }
+				)
+			: await em.findOne(TaskEntity, { id: taskId, column: columnId });
 
 		if (!task) {
 			throw new NotFoundException(
@@ -563,9 +724,12 @@ export class KanbanService {
 	private async loadTask(
 		em: EntityManager,
 		boardId: string,
-		taskId: number
+		taskId: number,
+		includeTags = false
 	): Promise<TaskEntity> {
-		const task = await em.findOne(TaskEntity, { id: taskId });
+		const task = includeTags
+			? await em.findOne(TaskEntity, { id: taskId }, { populate: ["tags"] })
+			: await em.findOne(TaskEntity, { id: taskId });
 
 		if (!task) {
 			throw new NotFoundException(`Task '${taskId}' not found`);
@@ -575,4 +739,68 @@ export class KanbanService {
 
 		return task;
 	}
+
+	private async loadTag(
+		em: EntityManager,
+		boardId: string,
+		tagId: number
+	): Promise<TagEntity> {
+		const tag = await em.findOne(TagEntity, { id: tagId, board: boardId });
+
+		if (!tag) {
+			throw new NotFoundException(
+				`Tag '${tagId}' not found on board '${boardId}'`
+			);
+		}
+
+		return tag;
+	}
+
+	// Resolves the requested tag ids against the board, rejecting ids that do
+	// not belong to it (or do not exist) so a task cannot borrow another
+	// board's tags
+	private async resolveTags(
+		em: EntityManager,
+		boardId: string,
+		tagIds: number[] | undefined
+	): Promise<TagEntity[]> {
+		if (!tagIds || tagIds.length === 0) {
+			return [];
+		}
+
+		const unique = [...new Set(tagIds)];
+		const tags = await em.find(TagEntity, {
+			id: { $in: unique },
+			board: boardId,
+		});
+
+		if (tags.length !== unique.length) {
+			const found = new Set(tags.map((tag) => tag.id as number));
+			const missing = unique.filter((id) => !found.has(id));
+
+			throw new NotFoundException(
+				`Tag(s) not found on board '${boardId}': ${missing.join(", ")}`
+			);
+		}
+
+		return tags;
+	}
+}
+
+function normalizeOptionalText(value: string | null | undefined): string | null {
+	if (value === null || value === undefined) {
+		return null;
+	}
+
+	const trimmed = value.trim();
+
+	return trimmed === "" ? null : trimmed;
+}
+
+function parseDueAt(value: string | null | undefined): Date | null {
+	if (value === null || value === undefined || value === "") {
+		return null;
+	}
+
+	return new Date(value);
 }

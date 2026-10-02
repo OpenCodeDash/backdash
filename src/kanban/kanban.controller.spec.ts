@@ -7,6 +7,7 @@ import { KanbanService } from "./kanban.service.js";
 import { BoardEntity } from "./entity/board.entity.js";
 import { ColumnEntity } from "./entity/column.entity.js";
 import { TaskEntity } from "./entity/task.entity.js";
+import { TagEntity } from "./entity/tag.entity.js";
 
 function makeColumn(id: number, name: string, position: number, isQueue: boolean): ColumnEntity {
 	const column = new ColumnEntity();
@@ -23,7 +24,18 @@ function makeTask(id: number, name: string, position: number, columnId = 1): Tas
 	task.name = name;
 	task.position = position;
 	task.column = makeColumn(columnId, "Col", 0, true);
+	task.createdAt = new Date("2026-01-01T00:00:00.000Z");
+	task.updatedAt = new Date("2026-01-01T00:00:00.000Z");
 	return task;
+}
+
+function makeTag(id: number, name: string): TagEntity {
+	const tag = new TagEntity();
+	tag.id = id;
+	tag.name = name;
+	tag.createdAt = new Date("2026-01-01T00:00:00.000Z");
+	tag.updatedAt = new Date("2026-01-01T00:00:00.000Z");
+	return tag;
 }
 
 function makeBoard(id: string, name: string, columnNames: string[] = ["Todo"]): BoardEntity {
@@ -53,6 +65,10 @@ interface ServiceMock {
 	moveTask: ReturnType<typeof vi.fn>;
 	claimTask: ReturnType<typeof vi.fn>;
 	releaseTask: ReturnType<typeof vi.fn>;
+	listTags: ReturnType<typeof vi.fn>;
+	createTag: ReturnType<typeof vi.fn>;
+	updateTag: ReturnType<typeof vi.fn>;
+	deleteTag: ReturnType<typeof vi.fn>;
 }
 
 describe("KanbanController", () => {
@@ -76,6 +92,10 @@ describe("KanbanController", () => {
 			moveTask: vi.fn(),
 			claimTask: vi.fn(),
 			releaseTask: vi.fn(),
+			listTags: vi.fn(),
+			createTag: vi.fn(),
+			updateTag: vi.fn(),
+			deleteTag: vi.fn(),
 		};
 		const module = await Test.createTestingModule({
 			controllers: [KanbanController],
@@ -165,7 +185,21 @@ describe("KanbanController", () => {
 		const res = await controller.createTask("b1", 1, { name: "Ship it" });
 
 		expect(service.createTask).toHaveBeenCalledWith("b1", 1, { name: "Ship it" });
-		expect(res).toEqual({ id: 7, columnId: 1, name: "Ship it", description: null, position: 2, claimedBy: null });
+		expect(res).toEqual({
+			id: 7,
+			columnId: 1,
+			name: "Ship it",
+			description: null,
+			position: 2,
+			claimedBy: null,
+			priority: null,
+			estimate: null,
+			assignee: null,
+			dueAt: null,
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+			tags: [],
+		});
 	});
 
 	it("updateTask passes the parsed ids through", async () => {
@@ -201,6 +235,48 @@ describe("KanbanController", () => {
 		service.releaseTask.mockResolvedValue(makeTask(7, "Ship it", 0));
 		await controller.releaseTask("b1", 1, 7);
 		expect(service.releaseTask).toHaveBeenCalledWith("b1", 1, 7);
+	});
+
+	it("listTags maps tags to TagResponse", async () => {
+		service.listTags.mockResolvedValue([makeTag(1, "frontend")]);
+		const res = await controller.listTags("b1");
+
+		expect(service.listTags).toHaveBeenCalledWith("b1");
+		expect(res).toEqual([
+			{
+				id: 1,
+				name: "frontend",
+				description: null,
+				prompt: null,
+				color: null,
+				createdAt: "2026-01-01T00:00:00.000Z",
+				updatedAt: "2026-01-01T00:00:00.000Z",
+			},
+		]);
+	});
+
+	it("createTag passes the dto through and maps the response", async () => {
+		service.createTag.mockResolvedValue(makeTag(2, "backend"));
+		const res = await controller.createTag("b1", { name: "backend" });
+
+		expect(service.createTag).toHaveBeenCalledWith("b1", { name: "backend" });
+		expect(res.name).toBe("backend");
+	});
+
+	it("updateTag passes the parsed tag id through", async () => {
+		service.updateTag.mockResolvedValue(makeTag(2, "backend-renamed"));
+		const res = await controller.updateTag("b1", 2, { name: "backend-renamed" });
+
+		expect(service.updateTag).toHaveBeenCalledWith("b1", 2, {
+			name: "backend-renamed",
+		});
+		expect(res.name).toBe("backend-renamed");
+	});
+
+	it("deleteTag passes the parsed tag id through", async () => {
+		service.deleteTag.mockResolvedValue(undefined);
+		await expect(controller.deleteTag("b1", 2)).resolves.toBeUndefined();
+		expect(service.deleteTag).toHaveBeenCalledWith("b1", 2);
 	});
 
 	it("propagates a 404 from the service", async () => {

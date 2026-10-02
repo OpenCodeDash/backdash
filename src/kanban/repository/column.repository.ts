@@ -76,6 +76,15 @@ export class ColumnRepository extends EntityRepository<ColumnEntity> {
 
 		await this.em.flush();
 
-		return this.findByBoard(boardId);
+		// Re-load with tasks (and their tags) populated so the response/event
+		// payload does not degrade to empty task lists and wipe client state
+		return this.em.find(
+			ColumnEntity,
+			{ board: boardId },
+			{
+				orderBy: { position: "asc", id: "asc" },
+				populate: ["tasks", "tasks.tags"],
+			}
+		);
 	}
 }

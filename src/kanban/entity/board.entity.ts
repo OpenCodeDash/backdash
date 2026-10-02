@@ -6,6 +6,7 @@ import {
 } from "@mikro-orm/decorators/legacy";
 import { BoardRepository } from "../repository/board.repository.js";
 import { ColumnEntity } from "./column.entity.js";
+import { TagEntity } from "./tag.entity.js";
 import { Collection } from "@mikro-orm/core";
 
 @Entity({
@@ -30,4 +31,10 @@ export class BoardEntity {
 		orderBy: { position: "asc", id: "asc" },
 	})
 	columns = new Collection<ColumnEntity>(this);
+
+	@OneToMany(() => TagEntity, (tag) => tag.board, {
+		orphanRemoval: true,
+		orderBy: { name: "asc" },
+	})
+	tags = new Collection<TagEntity>(this);
 }
