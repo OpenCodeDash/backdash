@@ -188,6 +188,22 @@ describe("KanbanService", () => {
 		expect(event.payload).toMatchObject({ id: todo.id, name: "Ready" });
 	});
 
+	it("updateColumn preserves the column's tasks when toggling isQueue", async () => {
+		const board = await service.createBoard("QueueToggle");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "Kept" });
+
+		const updated = await service.updateColumn(board.id, todo.id!, {
+			isQueue: false,
+		});
+
+		// The response must carry the column's tasks, otherwise the client's
+		// column patch wipes them
+		expect(updated.tasks.isInitialized()).toBe(true);
+		expect(updated.tasks.toArray().map((t) => t.name)).toEqual(["Kept"]);
+		expect(task.id).toBe(updated.tasks.toArray()[0]!.id);
+	});
+
 	it("updateColumn rejects a rename to a duplicate name with 409", async () => {
 		const board = await service.createBoard("DupUpd");
 		const [todo] = await service.getBoard(board.id).then((b) => b.columns.toArray());
