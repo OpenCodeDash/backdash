@@ -101,6 +101,9 @@ a service account claims tasks as its own name.
 | `BACKDASH_CORS_ORIGINS` | any | Comma-separated browser-origin allowlist for CORS |
 | `DATABASE_PATH` | `./app.sqlite` | SQLite file |
 
+A `.env` file in the working directory is loaded on startup, for both the app
+and the MikroORM CLI (no extra dependency).
+
 `POST /auth/register` and `POST /auth/login` are rate limited per client IP.
 
 ## Run tests
