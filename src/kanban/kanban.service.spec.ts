@@ -16,6 +16,7 @@ import { ColumnEntity } from "./entity/column.entity.js";
 import { TaskEntity } from "./entity/task.entity.js";
 import { TagEntity } from "./entity/tag.entity.js";
 import { TaskPriority } from "./enum/task-priority.enum.js";
+import { TaskTodoStatus } from "./enum/task-todo-status.enum.js";
 import { EventEntity } from "../events/entity/event.entity.js";
 import { EventType } from "../events/enum/event-type.enum.js";
 
@@ -570,6 +571,68 @@ describe("KanbanService tags and task metadata", () => {
 		expect(
 			(event.payload.tags as { name: string }[]).map((t) => t.name)
 		).toEqual(["ccc"]);
+	});
+
+	it("createTask persists the initial checklist", async () => {
+		const board = await service.createBoard("TaskTodos");
+		const column = await firstColumn(board.id);
+		const task = await service.createTask(board.id, column.id!, {
+			name: "T",
+			todos: [
+				{ content: "write code", status: TaskTodoStatus.Pending },
+				{ content: "run tests", status: TaskTodoStatus.InProgress },
+			],
+		});
+
+		expect(task.todos).toEqual([
+			{ content: "write code", status: TaskTodoStatus.Pending },
+			{ content: "run tests", status: TaskTodoStatus.InProgress },
+		]);
+
+		const [event] = await eventsOfType(EventType.TaskCreated);
+		expect(event.payload).toMatchObject({
+			todos: [
+				{ content: "write code", status: "pending" },
+				{ content: "run tests", status: "in_progress" },
+			],
+		});
+	});
+
+	it("createTask defaults an empty checklist when none is provided", async () => {
+		const board = await service.createBoard("TaskTodosEmpty");
+		const column = await firstColumn(board.id);
+		const task = await service.createTask(board.id, column.id!, { name: "T" });
+		expect(task.todos).toEqual([]);
+	});
+
+	it("updateTask replaces the checklist wholesale and [] clears it", async () => {
+		const board = await service.createBoard("TaskTodosUpd");
+		const column = await firstColumn(board.id);
+		const task = await service.createTask(board.id, column.id!, {
+			name: "T",
+			todos: [{ content: "a", status: TaskTodoStatus.Pending }],
+		});
+
+		const replaced = await service.updateTask(board.id, column.id!, task.id!, {
+			todos: [
+				{ content: "a", status: TaskTodoStatus.Completed },
+				{ content: "b", status: TaskTodoStatus.Pending },
+			],
+		});
+		expect(replaced.todos).toEqual([
+			{ content: "a", status: TaskTodoStatus.Completed },
+			{ content: "b", status: TaskTodoStatus.Pending },
+		]);
+
+		const cleared = await service.updateTask(board.id, column.id!, task.id!, {
+			todos: [],
+		});
+		expect(cleared.todos).toEqual([]);
+
+		// Confirm the [] actually hit the JSON column, not just the in-memory copy
+		ctx.em.clear();
+		const reloaded = (await ctx.em.find(TaskEntity, { id: task.id! }))[0];
+		expect(reloaded.todos).toEqual([]);
 	});
 
 	it("updateTask rejects tags from another board with 404", async () => {

@@ -32,6 +32,8 @@ import { UpdateTaskDto } from "./dto/update-task.dto.js";
 import { CreateTagDto } from "./dto/create-tag.dto.js";
 import { UpdateTagDto } from "./dto/update-tag.dto.js";
 import { MoveTaskDto } from "./dto/move-task.dto.js";
+import { TaskTodoDto } from "./dto/task-todo.dto.js";
+import { TaskTodo } from "./types/task-todo.js";
 
 // Fallback actor for callers that do not supply an authenticated identity.
 // Every HTTP request path supplies one, so this is only a safety net (used by
@@ -437,6 +439,7 @@ export class KanbanService {
 			estimate: dto.estimate ?? null,
 			assignee: normalizeOptionalText(dto.assignee),
 			dueAt: parseDueAt(dto.dueAt),
+			todos: toTodos(dto.todos),
 		});
 		task.tags.set(tags);
 		task.dependsOn.set(dependsOn);
@@ -488,6 +491,9 @@ export class KanbanService {
 			task.dependsOn.set(
 				await this.resolveDependencies(em, boardId, taskId, dto.dependsOn)
 			);
+		}
+		if (dto.todos !== undefined) {
+			task.todos = toTodos(dto.todos);
 		}
 
 		// Flush before building the payload so onUpdate has refreshed
@@ -942,4 +948,13 @@ function parseDueAt(value: string | null | undefined): Date | null {
 	}
 
 	return new Date(value);
+}
+
+// Maps a request's todo list onto plain domain objects so the JSON column never
+// stores a decorated DTO instance.
+function toTodos(todos?: TaskTodoDto[]): TaskTodo[] {
+	return (todos ?? []).map((todo) => ({
+		content: todo.content,
+		status: todo.status,
+	}));
 }

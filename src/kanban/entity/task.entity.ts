@@ -12,6 +12,7 @@ import { ColumnEntity } from "./column.entity.js";
 import { TagEntity } from "./tag.entity.js";
 import { TaskRepository } from "../repository/task.repository.js";
 import { TaskPriority } from "../enum/task-priority.enum.js";
+import { TaskTodo } from "../types/task-todo.js";
 
 @Entity({
 	tableName: "tasks",
@@ -89,6 +90,13 @@ export class TaskEntity {
 		onUpdate: () => new Date(),
 	})
 	updatedAt: Opt<Date> = new Date();
+
+	// Ordered checklist the agent maintains while working the task. Stored as a
+	// JSON column and replaced wholesale on update (like tagIds).
+	@Property({
+		type: "json",
+	})
+	todos: TaskTodo[] = [];
 
 	// Owning side of the task<->tag many-to-many
 	@ManyToMany(() => TagEntity, (tag) => tag.tasks, { owner: true })

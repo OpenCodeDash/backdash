@@ -4,6 +4,8 @@ import { TaskEntity } from "../entity/task.entity.js";
 import { ColumnEntity } from "../entity/column.entity.js";
 import { TagResponse } from "./tag.response.js";
 import { TaskPriority } from "../enum/task-priority.enum.js";
+import { TaskTodo } from "../types/task-todo.js";
+import { TaskTodoDto } from "../dto/task-todo.dto.js";
 
 @ApiSchema({ name: "Task" })
 export class TaskResponse {
@@ -82,6 +84,12 @@ export class TaskResponse {
 	updatedAt: string;
 
 	@ApiProperty({
+		type: [TaskTodoDto],
+		description: "Ordered checklist the agent maintains for the task",
+	})
+	todos: TaskTodo[];
+
+	@ApiProperty({
 		type: [TagResponse],
 		description: "Board tags attached to the task",
 	})
@@ -125,6 +133,7 @@ export class TaskResponse {
 			dueAt: task.dueAt ? task.dueAt.toISOString() : null,
 			createdAt: task.createdAt.toISOString(),
 			updatedAt: task.updatedAt.toISOString(),
+			todos: task.todos ?? [],
 			tags,
 			dependsOn,
 			dependents,
