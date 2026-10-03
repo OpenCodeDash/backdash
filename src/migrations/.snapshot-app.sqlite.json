@@ -973,6 +973,23 @@
           "enumItems": [],
           "mappedType": "text"
         },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "''",
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "text"
+        },
         "todos": {
           "name": "todos",
           "type": "json",

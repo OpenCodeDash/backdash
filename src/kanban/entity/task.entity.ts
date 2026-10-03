@@ -52,6 +52,15 @@ export class TaskEntity {
 	})
 	claimedBy: Opt<string> = "";
 
+	// The opencode session currently working this task, set by the agent on
+	// claim and cleared on release (or when moved to a done column). Lets the
+	// dashboard resolve a session back to its task. Empty string = unlinked.
+	@Property({
+		type: "text",
+		length: 100,
+	})
+	sessionId: Opt<string> = "";
+
 	@Property({
 		type: "text",
 		length: 10,

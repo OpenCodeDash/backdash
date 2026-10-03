@@ -399,6 +399,74 @@ describe("KanbanService", () => {
 			service.releaseTask(board.id, todo.id!, task.id!)
 		).rejects.toBeInstanceOf(ConflictException);
 	});
+
+	it("claimTask records the claiming session and emits it", async () => {
+		const board = await service.createBoard("ClaimSession");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "With session" });
+
+		const claimed = await service.claimTask(board.id, todo.id!, task.id!, "agent-7", "ses_123");
+		expect(claimed.sessionId).toBe("ses_123");
+		const [event] = await eventsOfType(EventType.TaskClaimed);
+		expect(event.payload).toMatchObject({ sessionId: "ses_123" });
+	});
+
+	it("claimTask without a session leaves the link empty", async () => {
+		const board = await service.createBoard("ClaimNoSession");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "No session" });
+		const claimed = await service.claimTask(board.id, todo.id!, task.id!, "agent-7");
+		expect(claimed.sessionId).toBe("");
+	});
+
+	it("releaseTask clears the session link", async () => {
+		const board = await service.createBoard("ReleaseSession");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "Release session" });
+		await service.claimTask(board.id, todo.id!, task.id!, "agent-1", "ses_555");
+
+		const released = await service.releaseTask(board.id, todo.id!, task.id!);
+		expect(released.sessionId).toBe("");
+	});
+
+	it("moveTask into a done column clears the session link", async () => {
+		const board = await service.createBoard("MoveSessionDone");
+		const cols = (await service.getBoard(board.id)).columns.toArray();
+		const todo = cols.find((c) => c.name === "Todo")!;
+		const done = cols.find((c) => c.name === "Done")!;
+		const task = await service.createTask(board.id, todo.id!, { name: "Finish" });
+		await service.claimTask(board.id, todo.id!, task.id!, "agent-1", "ses_999");
+
+		const moved = await service.moveTask(board.id, task.id!, { columnId: done.id! });
+		expect(moved.sessionId).toBe("");
+	});
+
+	it("moveTask into a non-done column keeps the session link", async () => {
+		const board = await service.createBoard("MoveSessionKeep");
+		const cols = (await service.getBoard(board.id)).columns.toArray();
+		const todo = cols.find((c) => c.name === "Todo")!;
+		const inProgress = cols.find((c) => c.name === "In Progress")!;
+		const task = await service.createTask(board.id, todo.id!, { name: "Keep" });
+		await service.claimTask(board.id, todo.id!, task.id!, "agent-1", "ses_777");
+
+		const moved = await service.moveTask(board.id, task.id!, { columnId: inProgress.id! });
+		expect(moved.sessionId).toBe("ses_777");
+	});
+
+	it("findTasksBySession returns the linked task with its board", async () => {
+		const board = await service.createBoard("SessionLookup");
+		const [todo] = (await service.getBoard(board.id)).columns.toArray();
+		const task = await service.createTask(board.id, todo.id!, { name: "Linked" });
+		await service.claimTask(board.id, todo.id!, task.id!, "agent-1", "ses_abc");
+
+		const found = await service.findTasksBySession("ses_abc");
+		expect(found).toHaveLength(1);
+		expect(found[0].board.id).toBe(board.id);
+		expect(found[0].task.id).toBe(task.id);
+
+		expect(await service.findTasksBySession("ses_other")).toEqual([]);
+		expect(await service.findTasksBySession("")).toEqual([]);
+	});
 });
 
 describe("KanbanService tags and task metadata", () => {
@@ -633,6 +701,22 @@ describe("KanbanService tags and task metadata", () => {
 		ctx.em.clear();
 		const reloaded = (await ctx.em.find(TaskEntity, { id: task.id! }))[0];
 		expect(reloaded.todos).toEqual([]);
+	});
+
+	it("updateTask links and clears the session id", async () => {
+		const board = await service.createBoard("TaskSessionUpd");
+		const column = await firstColumn(board.id);
+		const task = await service.createTask(board.id, column.id!, { name: "S" });
+
+		const linked = await service.updateTask(board.id, column.id!, task.id!, {
+			sessionId: "ses_link",
+		});
+		expect(linked.sessionId).toBe("ses_link");
+
+		const cleared = await service.updateTask(board.id, column.id!, task.id!, {
+			sessionId: null,
+		});
+		expect(cleared.sessionId).toBe("");
 	});
 
 	it("updateTask rejects tags from another board with 404", async () => {

@@ -74,6 +74,7 @@ interface ServiceMock {
 	moveTask: ReturnType<typeof vi.fn>;
 	claimTask: ReturnType<typeof vi.fn>;
 	releaseTask: ReturnType<typeof vi.fn>;
+	findTasksBySession: ReturnType<typeof vi.fn>;
 	listTags: ReturnType<typeof vi.fn>;
 	createTag: ReturnType<typeof vi.fn>;
 	updateTag: ReturnType<typeof vi.fn>;
@@ -101,6 +102,7 @@ describe("KanbanController", () => {
 			moveTask: vi.fn(),
 			claimTask: vi.fn(),
 			releaseTask: vi.fn(),
+			findTasksBySession: vi.fn(),
 			listTags: vi.fn(),
 			createTag: vi.fn(),
 			updateTag: vi.fn(),
@@ -201,6 +203,7 @@ describe("KanbanController", () => {
 			description: null,
 			position: 2,
 			claimedBy: null,
+			sessionId: null,
 			priority: null,
 			estimate: null,
 			assignee: null,
@@ -236,11 +239,30 @@ describe("KanbanController", () => {
 		expect(res.position).toBe(0);
 	});
 
-	it("claimTask claims as the authenticated account", async () => {
+	it("claimTask claims as the authenticated account and forwards the session", async () => {
 		service.claimTask.mockResolvedValue(makeTask(7, "Ship it", 0));
-		await controller.claimTask("b1", 1, 7, account);
+		await controller.claimTask("b1", 1, 7, { sessionId: "ses_abc" }, account);
 
-		expect(service.claimTask).toHaveBeenCalledWith("b1", 1, 7, "tester");
+		expect(service.claimTask).toHaveBeenCalledWith("b1", 1, 7, "tester", "ses_abc");
+	});
+
+	it("claimTask tolerates a missing body", async () => {
+		service.claimTask.mockResolvedValue(makeTask(7, "Ship it", 0));
+		await controller.claimTask("b1", 1, 7, {}, account);
+
+		expect(service.claimTask).toHaveBeenCalledWith("b1", 1, 7, "tester", undefined);
+	});
+
+	it("getTasksBySession maps each linked task to a SessionTaskResponse", async () => {
+		const task = makeTask(7, "Ship it", 0);
+		service.findTasksBySession.mockResolvedValue([{ board: { id: "b1" }, task }]);
+
+		const res = await controller.getTasksBySession("ses_abc");
+
+		expect(service.findTasksBySession).toHaveBeenCalledWith("ses_abc");
+		expect(res).toHaveLength(1);
+		expect(res[0].boardId).toBe("b1");
+		expect(res[0].task.id).toBe(7);
 	});
 
 	it("releaseTask passes the parsed ids through", async () => {
