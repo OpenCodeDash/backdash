@@ -1,4 +1,5 @@
 import {
+	ArrayMaxSize,
 	IsArray,
 	IsEnum,
 	IsInt,
@@ -8,9 +9,12 @@ import {
 	IsString,
 	MaxLength,
 	Min,
+	ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
 import { ApiProperty } from "@nestjs/swagger";
 import { TaskPriority } from "../enum/task-priority.enum.js";
+import { TaskTodoDto } from "./task-todo.dto.js";
 
 export class UpdateTaskDto {
 	@IsOptional()
@@ -100,4 +104,17 @@ export class UpdateTaskDto {
 			"Replaces the task's dependencies with this exact set of task ids; must belong to the same board",
 	})
 	dependsOn?: number[];
+
+	@IsOptional()
+	@IsArray()
+	@ArrayMaxSize(100)
+	@ValidateNested({ each: true })
+	@Type(() => TaskTodoDto)
+	@ApiProperty({
+		type: [TaskTodoDto],
+		required: false,
+		description:
+			"Replaces the task's checklist with this exact, ordered list of todos; pass [] to clear it",
+	})
+	todos?: TaskTodoDto[];
 }

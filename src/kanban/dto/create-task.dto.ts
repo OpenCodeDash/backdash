@@ -1,4 +1,5 @@
 import {
+	ArrayMaxSize,
 	IsArray,
 	IsEnum,
 	IsInt,
@@ -8,9 +9,12 @@ import {
 	IsString,
 	MaxLength,
 	Min,
+	ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
 import { ApiProperty } from "@nestjs/swagger";
 import { TaskPriority } from "../enum/task-priority.enum.js";
+import { TaskTodoDto } from "./task-todo.dto.js";
 
 export class CreateTaskDto {
 	@IsString()
@@ -94,4 +98,16 @@ export class CreateTaskDto {
 		description: "Tasks (by id) this task depends on; must belong to the same board",
 	})
 	dependsOn?: number[];
+
+	@IsOptional()
+	@IsArray()
+	@ArrayMaxSize(100)
+	@ValidateNested({ each: true })
+	@Type(() => TaskTodoDto)
+	@ApiProperty({
+		type: [TaskTodoDto],
+		required: false,
+		description: "Initial checklist for the task",
+	})
+	todos?: TaskTodoDto[];
 }
