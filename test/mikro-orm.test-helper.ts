@@ -9,6 +9,7 @@ import { ColumnEntity } from "#/kanban/entity/column.entity";
 import { TaskEntity } from "#/kanban/entity/task.entity";
 import { TagEntity } from "#/kanban/entity/tag.entity";
 import { EventEntity } from "#/events/entity/event.entity";
+import { AccountEntity } from "#/auth/entity/account.entity";
 
 // Every entity in the app, passed as class references so MikroORM never has to
 // glob/import .ts files (which Node's loader can't parse under vitest).
@@ -18,6 +19,7 @@ export const TEST_ENTITIES = [
 	TaskEntity,
 	TagEntity,
 	EventEntity,
+	AccountEntity,
 ];
 
 // Shared in-memory ORM config: explicit entity class refs (no .ts glob), a
