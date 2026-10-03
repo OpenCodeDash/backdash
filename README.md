@@ -98,6 +98,7 @@ a service account claims tasks as its own name.
 | --- | --- | --- |
 | `PORT` | `3000` | Listen port |
 | `BACKDASH_HOST` | `127.0.0.1` | Bind address; set `0.0.0.0` to expose it |
+| `BACKDASH_CORS_ORIGINS` | any | Comma-separated browser-origin allowlist for CORS |
 | `DATABASE_PATH` | `./app.sqlite` | SQLite file |
 
 `POST /auth/register` and `POST /auth/login` are rate limited per client IP.

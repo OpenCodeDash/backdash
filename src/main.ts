@@ -3,6 +3,7 @@ import { MikroORM } from "@mikro-orm/core";
 import { AppModule } from "./app.module.js";
 import { ValidationPipe } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { parseCorsOrigins } from "./util/cors.util.js";
 
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule);
@@ -13,7 +14,13 @@ async function bootstrap() {
 	const orm = app.get(MikroORM);
 	await orm.migrator.up();
 
-	app.enableCors();
+	// CORS: any origin by default for local development. Set
+	// BACKDASH_CORS_ORIGINS to a comma-separated allowlist to lock it down.
+	// Auth is a bearer header (not a cookie), so credentials stay off.
+	app.enableCors({
+		origin: parseCorsOrigins(process.env.BACKDASH_CORS_ORIGINS),
+		credentials: false,
+	});
 	app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
 	const config = new DocumentBuilder()
