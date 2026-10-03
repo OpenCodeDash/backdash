@@ -85,6 +85,19 @@ export class UpdateTaskDto {
 	dueAt?: string | null;
 
 	@IsOptional()
+	@IsString()
+	@MaxLength(100)
+	@ApiProperty({
+		type: String,
+		required: false,
+		nullable: true,
+		maxLength: 100,
+		description:
+			"Links the task to an opencode session; null or '' clears the link",
+	})
+	sessionId?: string | null;
+
+	@IsOptional()
 	@IsArray()
 	@IsInt({ each: true })
 	@ApiProperty({

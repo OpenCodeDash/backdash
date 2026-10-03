@@ -229,6 +229,39 @@ describe("backdash (e2e)", () => {
 		expect(claimed.body.claimedBy).toBe("svc-worker");
 	});
 
+	it("links a task to the claiming session and resolves it by session id", async () => {
+		const created = await createBoard("SessionLink");
+		const [todo] = created.columns;
+		const task = await api
+			.post(`/kanban/${created.id}/columns/${todo.id}/tasks`)
+			.send({ name: "Linked" })
+			.expect(201);
+
+		// Claiming with a session id links the task to that session.
+		const claimed = await api
+			.post(
+				`/kanban/${created.id}/columns/${todo.id}/tasks/${task.body.id}/claim`
+			)
+			.send({ sessionId: "ses_e2e" })
+			.expect(200);
+		expect(claimed.body.sessionId).toBe("ses_e2e");
+
+		// The by-session lookup resolves it (and is not shadowed by /kanban/:id).
+		const found = await api.get("/kanban/sessions/ses_e2e/tasks").expect(200);
+		expect(found.body).toHaveLength(1);
+		expect(found.body[0].boardId).toBe(created.id);
+		expect(found.body[0].task.id).toBe(task.body.id);
+
+		// Releasing clears the link.
+		await api
+			.post(
+				`/kanban/${created.id}/columns/${todo.id}/tasks/${task.body.id}/release`
+			)
+			.expect(200);
+		const after = await api.get("/kanban/sessions/ses_e2e/tasks").expect(200);
+		expect(after.body).toEqual([]);
+	});
+
 	it("DELETE /auth/service/:id revokes the account and its token", async () => {
 		const svc = await api
 			.post("/auth/service")

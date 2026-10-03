@@ -45,6 +45,14 @@ export class TaskResponse {
 
 	@ApiProperty({
 		type: String,
+		nullable: true,
+		description:
+			"Opencode session working this task; set on claim, cleared on release or when moved to a done column",
+	})
+	sessionId: string | null;
+
+	@ApiProperty({
+		type: String,
 		enum: TaskPriority,
 		nullable: true,
 	})
@@ -127,6 +135,7 @@ export class TaskResponse {
 			description: task.description || null,
 			position: task.position,
 			claimedBy: task.claimedBy || null,
+			sessionId: task.sessionId || null,
 			priority: task.priority ?? null,
 			estimate: task.estimate ?? null,
 			assignee: task.assignee ?? null,

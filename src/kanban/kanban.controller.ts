@@ -19,6 +19,7 @@ import { UpdateTaskDto } from "./dto/update-task.dto.js";
 import { CreateTagDto } from "./dto/create-tag.dto.js";
 import { UpdateTagDto } from "./dto/update-tag.dto.js";
 import { MoveTaskDto } from "./dto/move-task.dto.js";
+import { ClaimTaskDto } from "./dto/claim-task.dto.js";
 import {
 	ApiBearerAuth,
 	ApiConflictResponse,
@@ -33,6 +34,7 @@ import { BoardSummaryResponse } from "./response/board-summary.response.js";
 import { ReorderColumnsDto } from "./dto/reorder-columns.dto.js";
 import { ColumnResponse } from "./response/column.response.js";
 import { TaskResponse } from "./response/task.response.js";
+import { SessionTaskResponse } from "./response/session-task.response.js";
 import { TagResponse } from "./response/tag.response.js";
 import { CurrentUser } from "../auth/current-user.decorator.js";
 import type { AuthenticatedAccount } from "../auth/auth.types.js";
@@ -63,6 +65,22 @@ export class KanbanController {
 	async getAllBoards(): Promise<BoardSummaryResponse[]> {
 		const boards = await this.kanbanService.all();
 		return boards.map((board) => BoardSummaryResponse.from(board));
+	}
+
+	@Get("sessions/:sessionId/tasks")
+	@ApiOperation({
+		operationId: "getTasksBySession",
+		description:
+			"Tasks linked to the given opencode session (newest first); used to resolve a session to its task",
+	})
+	@ApiOkResponse({ type: [SessionTaskResponse] })
+	async getTasksBySession(
+		@Param("sessionId") sessionId: string
+	): Promise<SessionTaskResponse[]> {
+		const found = await this.kanbanService.findTasksBySession(sessionId);
+		return found.map(({ board, task }) =>
+			SessionTaskResponse.from(board, task)
+		);
 	}
 
 	@Get(":id")
@@ -340,13 +358,15 @@ export class KanbanController {
 		@Param("boardId") boardId: string,
 		@Param("columnId", ParseIntPipe) columnId: number,
 		@Param("taskId", ParseIntPipe) taskId: number,
+		@Body() dto: ClaimTaskDto,
 		@CurrentUser() current: AuthenticatedAccount
 	): Promise<TaskResponse> {
 		const task = await this.kanbanService.claimTask(
 			boardId,
 			columnId,
 			taskId,
-			current.name
+			current.name,
+			dto.sessionId
 		);
 		return TaskResponse.from(task);
 	}

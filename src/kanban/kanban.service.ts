@@ -40,6 +40,12 @@ import { TaskTodo } from "./types/task-todo.js";
 // direct service tests).
 const DEFAULT_ACTOR = "dashboard";
 
+// The board convention is a column literally named "Done"; the agent plugin
+// uses the same check when it clears its per-session active-task map on move.
+function isDoneColumn(name: string): boolean {
+	return name.trim().toLowerCase() === "done";
+}
+
 @Injectable()
 export class KanbanService {
 	constructor(
@@ -484,6 +490,9 @@ export class KanbanService {
 		if (dto.dueAt !== undefined) {
 			task.dueAt = parseDueAt(dto.dueAt);
 		}
+		if (dto.sessionId !== undefined) {
+			task.sessionId = dto.sessionId ?? "";
+		}
 		if (dto.tagIds !== undefined) {
 			task.tags.set(await this.resolveTags(em, boardId, dto.tagIds));
 		}
@@ -563,6 +572,11 @@ export class KanbanService {
 				: Math.max(0, Math.min(dto.position, targetTasks.length));
 
 		task.column = targetColumn;
+		// A task moved into a done column is finished: unlink it from any session
+		// so the dashboard stops treating it as that session's active work.
+		if (isDoneColumn(targetColumn.name)) {
+			task.sessionId = "";
+		}
 		targetTasks.splice(insertAt, 0, task);
 
 		for (const [position, candidate] of sourceTasks.entries()) {
@@ -589,7 +603,8 @@ export class KanbanService {
 		boardId: string,
 		columnId: number,
 		taskId: number,
-		actor: string = DEFAULT_ACTOR
+		actor: string = DEFAULT_ACTOR,
+		sessionId?: string
 	): Promise<TaskEntity> {
 		const em = this.em.fork();
 		const board = await this.loadBoard(em, boardId);
@@ -606,6 +621,11 @@ export class KanbanService {
 		}
 
 		task.claimedBy = actor;
+		// Link the task to the claiming session so the dashboard can resolve a
+		// session back to its task (a claim without a session leaves it empty).
+		if (sessionId) {
+			task.sessionId = sessionId;
+		}
 
 		await em.flush();
 
@@ -637,6 +657,8 @@ export class KanbanService {
 		}
 
 		task.claimedBy = "";
+		// Releasing ends the session's work on the task, so drop the link too.
+		task.sessionId = "";
 
 		await em.flush();
 
@@ -651,6 +673,29 @@ export class KanbanService {
 		this.events.publish([EventResponse.from(event)]);
 
 		return task;
+	}
+
+	// Tasks linked to a given opencode session, newest first. The dashboard uses
+	// this to resolve a session to its task (and therefore the task's todos).
+	async findTasksBySession(
+		sessionId: string
+	): Promise<{ board: BoardEntity; task: TaskEntity }[]> {
+		if (!sessionId) return [];
+
+		const em = this.em.fork();
+		const tasks = await em.find(
+			TaskEntity,
+			{ sessionId },
+			{
+				populate: ["column.board", "tags", "dependsOn", "dependents"],
+				orderBy: { updatedAt: "desc", id: "desc" },
+			}
+		);
+
+		return tasks.map((task) => ({
+			board: (task.column as ColumnEntity).board as BoardEntity,
+			task,
+		}));
 	}
 
 	async boardExists(id: string) {
