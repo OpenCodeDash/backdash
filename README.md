@@ -1,79 +1,47 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# backdash
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Kanban + event stream backend for the **OpenCode Dash** frontend.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+A small NestJS API over SQLite that stores boards, columns, tasks and tags, and
+broadcasts every mutation as a server-sent event so clients stay live without
+polling. Tasks can be claimed by an authenticated account (a user or an agent's
+service account), optionally linked to an opencode session, and moved through
+queues.
 
-## Description
+The matching frontend client is **react-backdash**.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Stack
+
+NestJS 12, MikroORM 7 + SQLite, `@nestjs/swagger` for the OpenAPI spec, SSE for
+events, scrypt-hashed bearer tokens for auth.
 
 ## Project setup
 
-```bash
-$ npm install
+```sh
+npm install
+npm run start:dev      # watch mode, http://127.0.0.1:3000
 ```
 
-## Compile and run the project
+The database is created and migrated automatically on boot, so there is no
+separate setup step. Swagger UI is at `/docs` and the raw spec at
+`/openapi.json`.
 
-```bash
-# development
-$ npm run start
+## Configuration
 
-# watch mode
-$ npm run start:dev
+A `.env` file in the working directory is loaded on startup, for both the app
+and the MikroORM CLI (no extra dependency).
 
-# production mode
-$ npm run start:prod
-```
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `3000` | Listen port |
+| `BACKDASH_HOST` | `127.0.0.1` | Bind address; set `0.0.0.0` to expose it |
+| `BACKDASH_CORS_ORIGINS` | any | Comma-separated browser-origin allowlist for CORS |
+| `DATABASE_PATH` | `./app.sqlite` | SQLite file |
 
-## Database & migrations
+Binding to loopback by default keeps the API off the LAN; exposing it is an
+explicit opt-in. Auth is a bearer header, so CORS credentials are always off.
 
-Backdash uses SQLite (via MikroORM). The database file is controlled by the
-`DATABASE_PATH` environment variable and defaults to `./app.sqlite`.
-
-Pending migrations are applied automatically when the app boots, so a brand-new
-`DATABASE_PATH` is ready to use the moment the process starts — no separate
-migration step is required. `migration:up` is idempotent: on an already-migrated
-database it does nothing.
-
-You can still drive migrations manually:
-
-```bash
-# build first (migrations reference compiled entities under dist/)
-$ npm run build
-
-# create a new migration after changing entities
-$ npm run migration:create
-
-# apply pending migrations
-$ npm run migration:up
-
-# roll back the last migration
-$ npm run migration:down
-
-# list migrations and which have been applied
-$ npm run migration:list
-```
-
-## Authentication
+## API
 
 Every route except `GET /` (health), `POST /auth/register`, `POST /auth/login`
 and the Swagger docs requires a bearer token:
@@ -91,96 +59,74 @@ Admins provision every later account:
 
 Tokens are stored only as salted scrypt hashes: the plaintext token is returned
 once and is not retrievable again. Logging in rotates the account's token.
-Kanban events and task claims use the authenticated account name as the actor;
-a service account claims tasks as its own name.
+Kanban events and task claims use the authenticated account name as the actor; a
+service account claims tasks as its own name. `POST /auth/register` and
+`POST /auth/login` are rate limited per client IP.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` | `3000` | Listen port |
-| `BACKDASH_HOST` | `127.0.0.1` | Bind address; set `0.0.0.0` to expose it |
-| `BACKDASH_CORS_ORIGINS` | any | Comma-separated browser-origin allowlist for CORS |
-| `DATABASE_PATH` | `./app.sqlite` | SQLite file |
+### Kanban
 
-A `.env` file in the working directory is loaded on startup, for both the app
-and the MikroORM CLI (no extra dependency).
+Boards, columns, tags and tasks live under `/kanban`:
 
-`POST /auth/register` and `POST /auth/login` are rate limited per client IP.
+- `POST /kanban` · `GET /kanban` · `GET /kanban/:id` · `PUT /kanban/:id` · `DELETE /kanban/:id`
+- `POST /kanban/:boardId/columns` · `PUT|DELETE /kanban/:boardId/columns/:columnId` · `PUT /kanban/:boardId/columns/order`
+- `POST /kanban/:boardId/columns/:columnId/tasks` · `PUT|DELETE .../tasks/:taskId`
+- `POST /kanban/:boardId/tasks/:taskId/move`
+- `POST /kanban/:boardId/columns/:columnId/tasks/:taskId/claim` · `.../release`
+- `GET|POST /kanban/:boardId/tags` · `PUT|DELETE /kanban/:boardId/tags/:tagId`
+- `GET /kanban/sessions/:sessionId/tasks` — resolve a session to the tasks linked to it
 
-## Run tests
+A new board is seeded with `Todo` / `In Progress` / `Done` columns. Columns may
+be marked as queues; only queue tasks can be claimed. Claiming stores the actor
+and optional opencode `sessionId`; releasing clears them.
 
-```bash
-# unit tests
-$ npm run test
+### Events
 
-# e2e tests
-$ npm run test:e2e
+Two SSE streams, each carrying an event as JSON with the event `seq` as its SSE
+`id`:
 
-# test coverage
-$ npm run test:cov
+- `GET /events` — all boards
+- `GET /boards/:boardId/events` — one board
+
+Event types: `board.created|updated|deleted`, `column.added|updated|deleted|reordered`,
+`task.created|updated|claimed|moved|released|deleted`, `tag.added|updated|deleted`.
+Resume from a known point with `?lastEventId=N` (or the `Last-Event-ID` header).
+Named `ping` frames are keep-alives; a `resync` frame means history was pruned and
+the client should refetch full state.
+
+## Database & migrations
+
+Backdash uses SQLite via MikroORM. The database file is controlled by
+`DATABASE_PATH` and defaults to `./app.sqlite`.
+
+Pending migrations are applied automatically when the app boots, so a brand-new
+`DATABASE_PATH` is ready to use the moment the process starts — no separate
+migration step is required. `migration:up` is idempotent: on an already-migrated
+database it does nothing.
+
+You can still drive migrations manually:
+
+```sh
+npm run build            # migrations reference compiled entities under dist/
+npm run migration:create # create a new migration after changing entities
+npm run migration:up     # apply pending migrations
+npm run migration:down   # roll back the last migration
+npm run migration:list   # list migrations and which have been applied
 ```
 
-## Deployment
+## Scripts
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+| Command | Description |
+| --- | --- |
+| `npm run start:dev` | Watch mode |
+| `npm run start:prod` | Run the compiled build (`node dist/main`) |
+| `npm run build` | Compile with the Nest CLI |
+| `npm run lint` | `oxlint` (type-aware) over `src/` and `test/` |
+| `npm run format` | Prettier over `src/` and `test/` |
+| `npm run test` | Vitest unit tests |
+| `npm run test:e2e` | Vitest e2e tests |
+| `npm run test:cov` | Coverage |
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Related
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-To add it to this project:
-
-```bash
-$ npm install @nestjs/observe
-```
-
-Then follow the [setup guide](https://docs.nestjs.com/observability/overview) - it takes a single import and an app key.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- `../dash` — web frontend that consumes this API.
+- `../react-backdash` — React client for this API.
