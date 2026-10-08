@@ -41,8 +41,19 @@ The `/mcp` path is reserved and, when `MCP_UPSTREAM` is unset, returns a clear
 `502` instead of the SPA. MCP clients are configured with a full URL ending in
 `/mcp`, so that path must stay at the root no matter where the web API lives.
 
-The build context must contain both repos, so build from the workspace root
-(the directory holding `dash/` and `backdash/`):
+The `.github/workflows/docker-publish.yml` workflow builds this image and
+publishes it to the GitHub Container Registry on every push to `master` (and
+`v*` tags), so you can pull it instead of building:
+
+```sh
+docker run --rm -p 8080:8080 -v ocd-data:/data ghcr.io/opencodedash/backdash:latest
+```
+
+The image bundles the dash repo at its default branch; run the workflow manually
+(`workflow_dispatch`) to pick a different `dash-ref`.
+
+To build it yourself, the context must contain both repos, so build from the
+workspace root (the directory holding `dash/` and `backdash/`):
 
 ```sh
 docker build -f backdash/deploy/Dockerfile -t ocd .
