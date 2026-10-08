@@ -26,6 +26,49 @@ The database is created and migrated automatically on boot, so there is no
 separate setup step. Swagger UI is at `/docs` and the raw spec at
 `/openapi.json`.
 
+## Docker (dash + backdash in one image)
+
+`deploy/` builds a single image that runs **both** halves of OpenCode Dash
+behind nginx as one origin:
+
+| Path | Served by |
+| --- | --- |
+| `/` | dash (static SPA, history fallback) |
+| `/api/` | backdash, with the `/api` prefix stripped (`/api/kanban` → `/kanban`) |
+| `/mcp` | an MCP server, at the **root** path — never `/api/mcp` |
+
+The `/mcp` path is reserved and, when `MCP_UPSTREAM` is unset, returns a clear
+`502` instead of the SPA. MCP clients are configured with a full URL ending in
+`/mcp`, so that path must stay at the root no matter where the web API lives.
+
+The build context must contain both repos, so build from the workspace root
+(the directory holding `dash/` and `backdash/`):
+
+```sh
+docker build -f backdash/deploy/Dockerfile -t ocd .
+docker run --rm -p 8080:8080 -v ocd-data:/data ocd
+```
+
+or, equivalently:
+
+```sh
+cd backdash/deploy && docker compose up --build
+```
+
+Then: dash at `http://localhost:8080/`, API at `http://localhost:8080/api/`,
+Swagger at `http://localhost:8080/api/docs`.
+
+- The SQLite database lives at `DATABASE_PATH` (`/data/app.sqlite`); mount a
+  volume at `/data` to persist it across restarts.
+- `VITE_BACKDASH_URL` (default `/api`) and `VITE_OPENCODE_URL` (default
+  `http://127.0.0.1:4096`) are **build args** — Vite inlines them into the dash
+  bundle. Set `VITE_OPENCODE_URL` to wherever the browser reaches the opencode
+  server.
+- Point the kanban plugin/agents at the API including the prefix, e.g.
+  `KANBAN_URL=http://<host>:8080/api` (unchanged token).
+- Set `MCP_UPSTREAM` (e.g. `http://127.0.0.1:3010`) to expose an MCP server at
+  `/mcp`; leave it unset to keep `/mcp` reserved.
+
 ## Configuration
 
 A `.env` file in the working directory is loaded on startup, for both the app
