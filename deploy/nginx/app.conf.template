@@ -34,6 +34,17 @@ server {
         proxy_send_timeout 3600s;
     }
 
+    # ---- opencode server, at the ROOT path /opencode -----------------------
+    # dash is built with VITE_OPENCODE_URL=/opencode and reaches opencode on the
+    # same origin (no CORS); nginx proxies it to OPENCODE_UPSTREAM at runtime,
+    # so the opencode host is changeable with an env var (no rebuild). A ROOT
+    # path, never /api/opencode.
+    location = /opencode {
+        return 308 /opencode/;
+    }
+
+    include /etc/nginx/conf.d/opencode.location;
+
     # ---- MCP server, at the ROOT path /mcp (never /api/mcp) ----------------
     # Proxied to MCP_UPSTREAM when set; otherwise /mcp fails loudly instead of
     # falling through to the SPA. See the Docker section of the backdash README.
