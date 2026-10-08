@@ -1,0 +1,22 @@
+# Rendered by entrypoint.sh into /etc/nginx/conf.d/mcp.location.
+# The placeholder below is replaced with $MCP_UPSTREAM (e.g. http://127.0.0.1:3010).
+#
+# The MCP server is exposed at the ROOT path /mcp, deliberately NOT under /api:
+# MCP clients are configured with a full URL (…/mcp), so the path must stay
+# /mcp no matter where the web API lives. proxy_pass carries no URI, so the
+# incoming /mcp path is preserved and the upstream keeps its own /mcp route.
+location /mcp {
+    proxy_pass __MCP_UPSTREAM__;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Authorization $http_authorization;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}

@@ -1,0 +1,20 @@
+# Docker build context is the workspace root (which holds dash/ and backdash/).
+# Opt in to just those two repos so unrelated repos, worktrees and caches are
+# never uploaded to the daemon.
+*
+!dash
+!dash/**
+!backdash
+!backdash/**
+
+# ...but none of their build artifacts or VCS data (all rebuilt from source).
+**/node_modules
+**/dist
+**/.git
+**/.gitignore
+**/*.tsbuildinfo
+**/*.sqlite
+**/*.sqlite-journal
+**/coverage
+**/.DS_Store
+**/*.log

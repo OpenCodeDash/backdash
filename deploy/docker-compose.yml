@@ -1,0 +1,35 @@
+# Single-container deploy for OpenCode Dash: dash + backdash behind nginx.
+#
+#   cd backdash/deploy
+#   docker compose up --build
+#   open http://localhost:8080/            # dash
+#   open http://localhost:8080/api/        # backdash health
+#   open http://localhost:8080/api/docs    # backdash Swagger UI
+#
+# The build context is the workspace root so the image can build both repos.
+services:
+  ocd:
+    build:
+      context: ../..
+      dockerfile: backdash/deploy/Dockerfile
+      args:
+        # dash is built to call the API on the same origin at /api.
+        VITE_BACKDASH_URL: /api
+        # Where the browser reaches the opencode server (baked in at build time).
+        VITE_OPENCODE_URL: ${VITE_OPENCODE_URL:-http://127.0.0.1:4096}
+    image: ocd:local
+    ports:
+      - "${OCD_PORT:-8080}:8080"
+    environment:
+      DATABASE_PATH: /data/app.sqlite
+      # Same-origin dash needs no CORS entry; add extra dash origins if you host
+      # it elsewhere, comma-separated.
+      BACKDASH_CORS_ORIGINS: ${BACKDASH_CORS_ORIGINS:-}
+      # Optional MCP server origin. Exposed at /mcp (NOT /api/mcp).
+      MCP_UPSTREAM: ${MCP_UPSTREAM:-}
+    volumes:
+      - ocd-data:/data
+    restart: unless-stopped
+
+volumes:
+  ocd-data:

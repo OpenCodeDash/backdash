@@ -1,0 +1,7 @@
+# Used when MCP_UPSTREAM is not set. /mcp is reserved at the root (never under
+# /api); fail loudly rather than serving the SPA, so a misconfigured MCP client
+# gets an obvious error instead of HTML.
+location /mcp {
+    default_type text/plain;
+    return 502 "No MCP server configured. Set MCP_UPSTREAM to the MCP server origin (e.g. http://127.0.0.1:3010). The MCP endpoint stays at /mcp, not /api/mcp.\n";
+}
