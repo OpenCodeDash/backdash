@@ -1,0 +1,7 @@
+# Used when OPENCODE_UPSTREAM is not set. /opencode is reserved (a ROOT path,
+# never /api/opencode); fail loudly rather than serving the SPA, so the dash
+# connection banner shows an obvious error.
+location /opencode/ {
+    default_type text/plain;
+    return 502 "No opencode server configured. Set OPENCODE_UPSTREAM to the opencode server origin (e.g. http://host:4096).\n";
+}

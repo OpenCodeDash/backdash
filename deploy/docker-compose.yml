@@ -13,10 +13,9 @@ services:
       context: ../..
       dockerfile: backdash/deploy/Dockerfile
       args:
-        # dash is built to call the API on the same origin at /api.
+        # dash calls the API and the opencode server on the same origin.
         VITE_BACKDASH_URL: /api
-        # Where the browser reaches the opencode server (baked in at build time).
-        VITE_OPENCODE_URL: ${VITE_OPENCODE_URL:-http://127.0.0.1:4096}
+        VITE_OPENCODE_URL: /opencode
     image: ocd:local
     ports:
       - "${OCD_PORT:-8080}:8080"
@@ -25,8 +24,14 @@ services:
       # Same-origin dash needs no CORS entry; add extra dash origins if you host
       # it elsewhere, comma-separated.
       BACKDASH_CORS_ORIGINS: ${BACKDASH_CORS_ORIGINS:-}
+      # Where nginx proxies /opencode (must be reachable from the container).
+      # Defaults to an opencode on the Docker host; point it at a remote host
+      # (e.g. http://gigabox:4096) as needed. Runtime only — no rebuild.
+      OPENCODE_UPSTREAM: ${OPENCODE_UPSTREAM:-http://host.docker.internal:4096}
       # Optional MCP server origin. Exposed at /mcp (NOT /api/mcp).
       MCP_UPSTREAM: ${MCP_UPSTREAM:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ocd-data:/data
     restart: unless-stopped

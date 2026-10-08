@@ -5,9 +5,10 @@
 #   * dash (built static SPA) served by nginx on :8080
 #
 # nginx is the single public origin:
-#   /       -> dash SPA (client-side routing, history fallback)
-#   /api/   -> backdash, with the /api prefix stripped
-#   /mcp    -> reserved at the ROOT for an MCP server (never /api/mcp)
+#   /          -> dash SPA (client-side routing, history fallback)
+#   /api/      -> backdash, with the /api prefix stripped
+#   /opencode/ -> opencode, proxied to OPENCODE_UPSTREAM at runtime (no rebuild)
+#   /mcp       -> reserved at the ROOT for an MCP server (never /api/mcp)
 #
 # The build context must contain both repos, so it is the workspace root:
 #   docker build -f backdash/deploy/Dockerfile -t ocd .
@@ -44,11 +45,11 @@ WORKDIR /app
 COPY dash/package.json dash/package-lock.json ./
 RUN npm ci
 COPY dash/ ./
-# Vite inlines VITE_* at build time. /api keeps dash and the API on one origin
-# (no CORS). Override VITE_OPENCODE_URL when the opencode server is not
-# reachable at the browser's 127.0.0.1:4096 (e.g. a remote host).
+# Vite inlines VITE_* at build time. Both are same-origin RELATIVE paths: dash
+# reaches backdash at /api and opencode at /opencode. nginx proxies /opencode to
+# the runtime OPENCODE_UPSTREAM env, so the opencode host never needs a rebuild.
 ARG VITE_BACKDASH_URL=/api
-ARG VITE_OPENCODE_URL=http://127.0.0.1:4096
+ARG VITE_OPENCODE_URL=/opencode
 ENV VITE_BACKDASH_URL=$VITE_BACKDASH_URL \
     VITE_OPENCODE_URL=$VITE_OPENCODE_URL
 RUN npm run build
@@ -83,6 +84,8 @@ COPY --from=dash-build /app/dist /app/dash
 # nginx + entrypoint
 COPY backdash/deploy/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY backdash/deploy/nginx/app.conf.template /etc/nginx/conf.d/app.conf.template
+COPY backdash/deploy/nginx/opencode.location.template /etc/nginx/conf.d/opencode.location.template
+COPY backdash/deploy/nginx/opencode.location.disabled /etc/nginx/conf.d/opencode.location.disabled
 COPY backdash/deploy/nginx/mcp.location.template /etc/nginx/conf.d/mcp.location.template
 COPY backdash/deploy/nginx/mcp.location.disabled /etc/nginx/conf.d/mcp.location.disabled
 COPY backdash/deploy/entrypoint.sh /usr/local/bin/entrypoint.sh

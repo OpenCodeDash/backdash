@@ -1,0 +1,25 @@
+# Rendered by entrypoint.sh into /etc/nginx/conf.d/opencode.location.
+# The placeholder on proxy_pass is replaced with $OPENCODE_UPSTREAM
+# (e.g. http://gigabox:4096).
+#
+# dash is built with VITE_OPENCODE_URL=/opencode, so the browser reaches the
+# opencode server same-origin through here — no CORS. proxy_pass carries a
+# trailing slash, so the /opencode prefix is stripped before the request reaches
+# opencode. This is a ROOT path (/opencode), never /api/opencode.
+location /opencode/ {
+    proxy_pass __OPENCODE_UPSTREAM__/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    # The event stream (/opencode/global/event) and message streaming are SSE,
+    # so never buffer or cache them.
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+}

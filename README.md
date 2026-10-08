@@ -35,18 +35,22 @@ behind nginx as one origin:
 | --- | --- |
 | `/` | dash (static SPA, history fallback) |
 | `/api/` | backdash, with the `/api` prefix stripped (`/api/kanban` → `/kanban`) |
+| `/opencode/` | the opencode server, proxied to `OPENCODE_UPSTREAM` |
 | `/mcp` | an MCP server, at the **root** path — never `/api/mcp` |
 
-The `/mcp` path is reserved and, when `MCP_UPSTREAM` is unset, returns a clear
-`502` instead of the SPA. MCP clients are configured with a full URL ending in
-`/mcp`, so that path must stay at the root no matter where the web API lives.
+dash talks to backdash and to opencode **same-origin**, so neither needs CORS.
+`/opencode` and `/mcp` are each proxied to an upstream chosen at runtime
+(`OPENCODE_UPSTREAM`, `MCP_UPSTREAM`); when unset, the path returns a clear `502`
+instead of the SPA. These are root paths — never `/api/opencode` or `/api/mcp`.
 
 The `.github/workflows/docker-publish.yml` workflow builds this image and
 publishes it to the GitHub Container Registry on every push to `master` (and
 `v*` tags), so you can pull it instead of building:
 
 ```sh
-docker run --rm -p 8080:8080 -v ocd-data:/data ghcr.io/opencodedash/backdash:latest
+docker run --rm -p 8080:8080 -v ocd-data:/data \
+  -e OPENCODE_UPSTREAM=http://<opencode-host>:4096 \
+  ghcr.io/opencodedash/backdash:latest
 ```
 
 The image bundles the dash repo at its default branch; run the workflow manually
@@ -71,10 +75,13 @@ Swagger at `http://localhost:8080/api/docs`.
 
 - The SQLite database lives at `DATABASE_PATH` (`/data/app.sqlite`); mount a
   volume at `/data` to persist it across restarts.
-- `VITE_BACKDASH_URL` (default `/api`) and `VITE_OPENCODE_URL` (default
-  `http://127.0.0.1:4096`) are **build args** — Vite inlines them into the dash
-  bundle. Set `VITE_OPENCODE_URL` to wherever the browser reaches the opencode
-  server.
+- `OPENCODE_UPSTREAM` is where nginx proxies `/opencode` (e.g.
+  `http://gigabox:4096`, or `http://host.docker.internal:4096` for an opencode on
+  the Docker host). It is a **runtime** env var — no rebuild — and must be
+  reachable from the container. When unset, `/opencode` returns `502`.
+- `VITE_BACKDASH_URL` (`/api`) and `VITE_OPENCODE_URL` (`/opencode`) are the
+  relative **build args** Vite inlines into the dash bundle; the defaults are
+  what you want, so you normally never set them.
 - Point the kanban plugin/agents at the API including the prefix, e.g.
   `KANBAN_URL=http://<host>:8080/api` (unchanged token).
 - Set `MCP_UPSTREAM` (e.g. `http://127.0.0.1:3010`) to expose an MCP server at
