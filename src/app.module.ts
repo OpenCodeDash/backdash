@@ -7,6 +7,7 @@ import { MikroOrmModule } from "@mikro-orm/nestjs";
 import { EventsModule } from "./events/events.module.js";
 import { AuthModule } from "./auth/auth.module.js";
 import { AuthGuard } from "./auth/auth.guard.js";
+import { ResearchModule } from "./research/research.module.js";
 import mikroOrmConfig from "./mikro-orm.config.js";
 
 @Module({
@@ -15,6 +16,7 @@ import mikroOrmConfig from "./mikro-orm.config.js";
 		AuthModule,
 		KanbanModule,
 		EventsModule,
+		ResearchModule,
 	],
 	controllers: [AppController],
 	providers: [
