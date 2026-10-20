@@ -1,11 +1,15 @@
 import {
 	BadGatewayException,
 	BadRequestException,
+	Inject,
 	Injectable,
 	NotFoundException,
+	Optional,
 	type MessageEvent,
 } from "@nestjs/common";
 import { Observable } from "rxjs";
+
+export const RESEARCH_OPTIONS = Symbol("RESEARCH_OPTIONS");
 
 export interface ResearchServiceOptions {
 	baseUrl?: string;
@@ -29,7 +33,11 @@ export class ResearchService {
 	private readonly token?: string;
 	private readonly fetchImpl: typeof fetch;
 
-	constructor(options: ResearchServiceOptions = {}) {
+	constructor(
+		@Optional()
+		@Inject(RESEARCH_OPTIONS)
+		options: ResearchServiceOptions = {}
+	) {
 		this.baseUrl = (
 			options.baseUrl ??
 			process.env.HARNESS_URL ??
