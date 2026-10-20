@@ -19,7 +19,7 @@ export interface ResearchServiceOptions {
 
 export interface CreateCampaignInput {
 	prompt?: string;
-	brief?: string;
+	brief?: string | Record<string, unknown>;
 	pack?: string;
 	name?: string;
 }
@@ -88,19 +88,42 @@ export class ResearchService {
 	}
 
 	async create(input: CreateCampaignInput): Promise<unknown> {
-		if (!input.prompt?.trim() && !input.brief?.trim()) {
+		const hasPrompt = Boolean(input.prompt?.trim());
+		const hasBrief =
+			typeof input.brief === "string"
+				? Boolean(input.brief.trim())
+				: Boolean(input.brief);
+		if (!hasPrompt && !hasBrief) {
 			throw new BadRequestException("prompt or brief is required");
 		}
 		const response = await this.request("/campaigns", {
 			method: "POST",
 			body: JSON.stringify({
 				prompt: input.prompt?.trim() || undefined,
-				brief: input.brief?.trim() || undefined,
+				brief:
+					typeof input.brief === "string"
+						? input.brief.trim() || undefined
+						: input.brief,
 				pack: input.pack,
 				name: input.name,
 			}),
 		});
 		return response.json();
+	}
+
+	async preview(input: { prompt: string; pack?: string }): Promise<unknown> {
+		if (!input.prompt.trim()) {
+			throw new BadRequestException("prompt is required");
+		}
+		return (
+			await this.request("/campaigns/preview", {
+				method: "POST",
+				body: JSON.stringify({
+					prompt: input.prompt.trim(),
+					pack: input.pack,
+				}),
+			})
+		).json();
 	}
 
 	async results(id: string): Promise<unknown> {

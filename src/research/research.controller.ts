@@ -22,6 +22,7 @@ import type { Response } from "express";
 import { Observable } from "rxjs";
 import {
 	CreateResearchCampaignDto,
+	PreviewResearchCampaignDto,
 	ResearchFeedbackDto,
 } from "./dto/research.dto.js";
 import { ResearchService } from "./research.service.js";
@@ -49,6 +50,15 @@ export class ResearchController {
 	@ApiCreatedResponse({ description: "Campaign accepted and queued" })
 	create(@Body() dto: CreateResearchCampaignDto): Promise<unknown> {
 		return this.research.create(dto);
+	}
+
+	@Post("campaigns/preview")
+	@ApiOperation({
+		summary: "Compile a brief without starting",
+		description: "Returns the parsed criteria, echo, and warnings for review.",
+	})
+	preview(@Body() dto: PreviewResearchCampaignDto): Promise<unknown> {
+		return this.research.preview(dto);
 	}
 
 	@Get("campaigns/:id")
