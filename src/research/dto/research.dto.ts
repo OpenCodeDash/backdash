@@ -13,14 +13,10 @@ export class CreateResearchCampaignDto {
 	prompt?: string;
 
 	@IsOptional()
-	@IsString()
-	@MaxLength(20000)
 	@ApiPropertyOptional({
-		type: String,
-		maxLength: 20000,
-		description: "Pre-compiled brief YAML",
+		description: "Pre-compiled brief YAML or object",
 	})
-	brief?: string;
+	brief?: string | Record<string, unknown>;
 
 	@IsOptional()
 	@IsString()
@@ -41,4 +37,18 @@ export class ResearchFeedbackDto {
 	@MaxLength(4000)
 	@ApiProperty({ type: String, maxLength: 4000 })
 	text: string;
+}
+
+export class PreviewResearchCampaignDto {
+	@IsString()
+	@IsNotEmpty()
+	@MaxLength(4000)
+	@ApiProperty({ type: String, maxLength: 4000 })
+	prompt: string;
+
+	@IsOptional()
+	@IsString()
+	@MaxLength(50)
+	@ApiPropertyOptional({ type: String, example: "property" })
+	pack?: string;
 }

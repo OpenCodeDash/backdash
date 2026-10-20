@@ -48,6 +48,19 @@ beforeAll(async () => {
 			return;
 		}
 
+		if (url.pathname === "/campaigns/preview" && req.method === "POST") {
+			void readBody(req).then((body) => {
+				const input = JSON.parse(body) as { prompt?: string; pack?: string };
+				json(res, 200, {
+					brief: { version: 1, criteria: [] },
+					criteria: [{ key: "parking", label: "Parking", weight: 0.8 }],
+					echo: `Criteria for: ${input.prompt}`,
+					warnings: [],
+				});
+			});
+			return;
+		}
+
 		if (url.pathname === "/campaigns/missing") {
 			return json(res, 404, { error: "not found" });
 		}
@@ -130,6 +143,18 @@ describe("ResearchService", () => {
 		await expect(service().create({})).rejects.toBeInstanceOf(
 			BadRequestException
 		);
+	});
+
+	it("previews criteria without creating a campaign", async () => {
+		const preview = (await service().preview({
+			prompt: "find a rental",
+			pack: "property",
+		})) as {
+			criteria: Array<{ key: string }>;
+			echo: string;
+		};
+		expect(preview.criteria[0]?.key).toBe("parking");
+		expect(preview.echo).toContain("find a rental");
 	});
 
 	it("maps harness 404 and 5xx responses to Nest exceptions", async () => {
