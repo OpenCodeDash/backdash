@@ -140,6 +140,22 @@ A new board is seeded with `Todo` / `In Progress` / `Done` columns. Columns may
 be marked as queues; only queue tasks can be claimed. Claiming stores the actor
 and optional opencode `sessionId`; releasing clears them.
 
+## Research
+
+`/research/*` is an authenticated proxy to the harness daemon. The harness owns
+campaigns, listings, evidence, scores, and feedback; backdash does not copy that
+data, so there is one source of truth.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `HARNESS_URL` | `http://127.0.0.1:7332` | Harness daemon base URL |
+| `HARNESS_TOKEN` | unset | Bearer token sent to the harness daemon |
+
+Routes: list/create campaigns, campaign status, ranked results, CSV export,
+feedback, pause/resume/stop, and an SSE relay at
+`GET /research/campaigns/:id/events`.
+
+
 ### Events
 
 Two SSE streams, each carrying an event as JSON with the event `seq` as its SSE
