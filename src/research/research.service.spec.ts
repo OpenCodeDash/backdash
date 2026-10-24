@@ -61,6 +61,12 @@ beforeAll(async () => {
 			return;
 		}
 
+		if (url.pathname === "/campaigns/c1" && req.method === "DELETE") {
+			res.writeHead(204);
+			res.end();
+			return;
+		}
+
 		if (url.pathname === "/campaigns/missing") {
 			return json(res, 404, { error: "not found" });
 		}
@@ -180,6 +186,13 @@ describe("ResearchService", () => {
 		expect(feedback.changed).toBe(true);
 		expect(feedback.action).toBe("re-score");
 		expect(feedback.summary).toBe("drop sunlight");
+	});
+
+	it("deletes a campaign", async () => {
+		await expect(service().delete("c1")).resolves.toBeUndefined();
+		await expect(service().delete("missing")).rejects.toBeInstanceOf(
+			NotFoundException
+		);
 	});
 
 	it("returns the CSV body", async () => {
