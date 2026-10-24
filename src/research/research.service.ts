@@ -153,6 +153,12 @@ export class ResearchService {
 		return this.action(id, "stop");
 	}
 
+	async delete(id: string): Promise<void> {
+		await this.request(`/campaigns/${encodeURIComponent(id)}`, {
+			method: "DELETE",
+		});
+	}
+
 	private async action(id: string, action: string): Promise<unknown> {
 		return (
 			await this.request(`/campaigns/${encodeURIComponent(id)}/${action}`, {

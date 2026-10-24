@@ -1,6 +1,7 @@
 import {
 	Body,
 	Controller,
+	Delete,
 	Get,
 	Header,
 	HttpCode,
@@ -113,6 +114,17 @@ export class ResearchController {
 	@ApiOperation({ summary: "Stop a running campaign" })
 	stop(@Param("id") id: string): Promise<unknown> {
 		return this.research.stop(id);
+	}
+
+	@Delete("campaigns/:id")
+	@HttpCode(204)
+	@ApiOperation({
+		summary: "Delete a stopped campaign",
+		description:
+			"Removes the campaign, its database, media, and exports. Stop it first.",
+	})
+	async delete(@Param("id") id: string): Promise<void> {
+		await this.research.delete(id);
 	}
 
 	@Sse("campaigns/:id/events")
